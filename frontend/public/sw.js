@@ -31,7 +31,12 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('/api/')) {
+  if (
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('/@vite/') ||
+    event.request.url.includes('/@fs/') ||
+    event.request.url.includes('/src/')
+  ) {
     return;
   }
 
