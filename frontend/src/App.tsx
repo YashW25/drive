@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DriveProvider } from './context/DriveContext';
 import { LoginPage } from './pages/LoginPage';
 import { DrivePage } from './pages/DrivePage';
+import { SetupProfilePage } from './pages/SetupProfilePage';
 import { SharePage } from './pages/SharePage';
 import { InstallPwaModal } from './components/pwa/InstallPwaModal';
 
@@ -19,6 +20,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+
+  // Enforce compulsory profile completion for first login
+  if (!user.isProfileComplete) {
+    return <SetupProfilePage />;
+  }
+
   return <>{children}</>;
 };
 
@@ -28,7 +35,20 @@ export const AppContent: React.FC = () => {
   return (
     <>
       <Routes>
-        <Route path="/login" element={user ? <Navigate to="/drive" replace /> : <LoginPage />} />
+        <Route
+          path="/login"
+          element={
+            user ? (
+              user.isProfileComplete ? (
+                <Navigate to="/drive" replace />
+              ) : (
+                <SetupProfilePage />
+              )
+            ) : (
+              <LoginPage />
+            )
+          }
+        />
         <Route
           path="/drive"
           element={
@@ -40,7 +60,7 @@ export const AppContent: React.FC = () => {
           }
         />
         <Route path="/share/:token" element={<SharePage />} />
-        <Route path="*" element={<Navigate to={user ? "/drive" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={user ? (user.isProfileComplete ? "/drive" : "/login") : "/login"} replace />} />
       </Routes>
       <InstallPwaModal />
     </>

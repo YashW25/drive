@@ -2,9 +2,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { prisma } from '../config/db.js';
+import { OpenWAService } from './openwa.service.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'teledrive_default_jwt_secret_2026';
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
 
 export class AuthService {
   /**
@@ -18,16 +18,28 @@ export class AuthService {
 
     // Generate 6-digit verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+    const otpHash = crypto.createHash('sha256').update(code).digest('hex');
 
-    otpStore.set(cleanPhone, { code, expiresAt });
+    // Save OTP Record to DB
+    await prisma.otpRecord.create({
+      data: {
+        phoneNumber: cleanPhone,
+        otpHash,
+        expiresAt,
+      },
+    });
 
-    console.log(`[AuthService] OTP for ${cleanPhone}: ${code}`);
+    console.log(`[AuthService] Generated OTP for ${cleanPhone}: ${code}`);
 
-    // In production with real Telegram MTProto API client, send via Telegram sendCode API.
+    // Send OTP via OpenWA (WhatsApp)
+    const sentViaWhatsApp = await OpenWAService.sendOtp(cleanPhone, code);
+
     return {
       phone: cleanPhone,
-      message: 'Verification code sent via Telegram.',
+      message: sentViaWhatsApp
+        ? 'Verification code sent via WhatsApp.'
+        : 'Verification code generated. (Check server logs if OpenWA is disconnected).',
       devCode: process.env.NODE_ENV === 'development' ? code : undefined,
     };
   }
@@ -42,18 +54,38 @@ export class AuthService {
     userAgent?: string
   ) {
     const cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
-    const entry = otpStore.get(cleanPhone);
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
 
-    // Accept default test code 123456 or matching OTP
-    if (!entry || entry.expiresAt < Date.now()) {
-      if (code !== '123456') {
-        throw new Error('Verification code has expired or was not requested.');
+    let isValid = false;
+
+    // Check test code '123456'
+    if (code === '123456') {
+      isValid = true;
+    } else {
+      // Find active unexpired OTP record
+      const otpRecord = await prisma.otpRecord.findFirst({
+        where: {
+          phoneNumber: cleanPhone,
+          otpHash: codeHash,
+          expiresAt: { gte: new Date() },
+          verifiedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (otpRecord) {
+        isValid = true;
+        // Mark OTP as verified
+        await prisma.otpRecord.update({
+          where: { id: otpRecord.id },
+          data: { verifiedAt: new Date() },
+        });
       }
-    } else if (entry.code !== code && code !== '123456') {
-      throw new Error('Invalid verification code.');
     }
 
-    otpStore.delete(cleanPhone);
+    if (!isValid) {
+      throw new Error('Invalid or expired verification code.');
+    }
 
     // Find or create user
     let user = await prisma.user.findUnique({
@@ -65,6 +97,7 @@ export class AuthService {
         data: {
           phoneNumber: cleanPhone,
           displayName: `User ${cleanPhone.slice(-4)}`,
+          isProfileComplete: false,
         },
       });
     }
@@ -73,7 +106,6 @@ export class AuthService {
     const tokenPayload = { userId: user.id, phone: user.phoneNumber, role: user.role };
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     await prisma.session.create({
@@ -102,9 +134,35 @@ export class AuthService {
         id: user.id,
         phoneNumber: user.phoneNumber,
         displayName: user.displayName,
+        email: user.email,
+        isProfileComplete: user.isProfileComplete,
         role: user.role,
         avatarUrl: user.avatarUrl,
       },
+    };
+  }
+
+  /**
+   * Update user profile details
+   */
+  static async updateProfile(userId: string, data: { displayName?: string; email?: string }) {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.displayName ? { displayName: data.displayName } : {}),
+        ...(data.email ? { email: data.email } : {}),
+        isProfileComplete: true,
+      },
+    });
+
+    return {
+      id: user.id,
+      phoneNumber: user.phoneNumber,
+      displayName: user.displayName,
+      email: user.email,
+      isProfileComplete: user.isProfileComplete,
+      role: user.role,
+      avatarUrl: user.avatarUrl,
     };
   }
 

@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
 
-interface User {
+export interface User {
   id: string;
   phoneNumber: string;
   displayName: string;
+  email?: string | null;
+  isProfileComplete: boolean;
   role: string;
   avatarUrl?: string | null;
 }
@@ -15,6 +17,7 @@ interface AuthContextType {
   loading: boolean;
   requestOtp: (phone: string) => Promise<{ phone: string; message: string; devCode?: string }>;
   verifyOtp: (phone: string, code: string) => Promise<void>;
+  updateProfile: (data: { displayName: string; email: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -64,6 +67,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(res.user);
   };
 
+  const updateProfile = async (data: { displayName: string; email: string }) => {
+    const res = await apiRequest<{ user: User }>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    setUser(res.user);
+  };
+
   const logout = async () => {
     try {
       await apiRequest('/auth/logout', { method: 'POST' });
@@ -74,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, requestOtp, verifyOtp, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, requestOtp, verifyOtp, updateProfile, logout }}>
       {children}
     </AuthContext.Provider>
   );

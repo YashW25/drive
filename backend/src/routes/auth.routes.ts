@@ -48,6 +48,17 @@ router.post('/otp/verify', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /api/auth/profile
+router.put('/profile', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { displayName, email } = req.body;
+    const updatedUser = await AuthService.updateProfile(req.user!.id, { displayName, email });
+    res.json({ user: updatedUser });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // GET /api/auth/me
 router.get('/me', authenticate, (req: AuthenticatedRequest, res: Response) => {
   res.json({ user: req.user });

@@ -13,10 +13,12 @@ model User {
   telegramUserId   String?     @unique @map("telegram_user_id")
   displayName      String      @map("display_name")
   avatarUrl        String?     @map("avatar_url")
-  role             String      @default("USER")
-  settingsJson     String      @default("{}") @map("settings_json")
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt @map("updated_at")
+  email             String?     @map("email")
+  isProfileComplete Boolean     @default(false) @map("is_profile_complete")
+  role              String      @default("USER")
+  settingsJson      String      @default("{}") @map("settings_json")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
 
   sessions         Session[]
   folders          Folder[]
@@ -30,8 +32,37 @@ model User {
   auditLogs        AuditLog[]
   googleConnection GoogleConnection?
   googleMigrations GoogleMigration[]
+  userRequests     UserRequest[]
 
   @@map("users")
+}
+
+model OtpRecord {
+  id          String    @id @default(uuid())
+  phoneNumber String    @map("phone_number")
+  otpHash     String    @map("otp_hash")
+  attempts    Int       @default(0)
+  expiresAt   DateTime  @map("expires_at")
+  verifiedAt  DateTime? @map("verified_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([phoneNumber])
+  @@map("otp_records")
+}
+
+model UserRequest {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  requestType String   @map("request_type")
+  description String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_requests")
 }
 
 model Session {
