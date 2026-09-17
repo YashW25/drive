@@ -1,0 +1,28 @@
+import { ValueTransformer } from 'typeorm';
+export declare const bigintToNumberTransformer: ValueTransformer;
+export declare enum MessageDirection {
+    INCOMING = "incoming",
+    OUTGOING = "outgoing"
+}
+export declare enum MessageStatus {
+    PENDING = "pending",
+    SENT = "sent",
+    DELIVERED = "delivered",
+    READ = "read",
+    FAILED = "failed"
+}
+export declare class Message {
+    id: string;
+    sessionId: string;
+    waMessageId: string;
+    chatId: string;
+    from: string;
+    to: string;
+    body: string;
+    type: string;
+    direction: MessageDirection;
+    timestamp: number;
+    metadata: Record<string, unknown>;
+    status: MessageStatus;
+    createdAt: Date;
+}

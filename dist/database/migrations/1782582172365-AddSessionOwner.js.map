@@ -1,0 +1,1 @@
+{"version":3,"file":"1782582172365-AddSessionOwner.js","sourceRoot":"","sources":["../../../src/database/migrations/1782582172365-AddSessionOwner.ts"],"names":[],"mappings":";;;AAEA,MAAa,4BAA4B;IACrC,IAAI,GAAG,8BAA8B,CAAA;IAE9B,KAAK,CAAC,EAAE,CAAC,WAAwB;QAEpC,MAAM,WAAW,CAAC,KAAK,CAAC,kEAAkE,CAAC,CAAC;IAChG,CAAC;IAEM,KAAK,CAAC,IAAI,CAAC,WAAwB;IAE1C,CAAC;CACJ;AAXD,oEAWC"}

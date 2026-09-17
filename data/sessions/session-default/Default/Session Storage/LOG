@@ -1,0 +1,4 @@
+2026/06/27-22:33:51.134 908 Creating DB D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\Session Storage since it was missing.
+2026/06/27-22:33:53.491 908 Reusing MANIFEST D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\Session Storage/MANIFEST-000001
+2026/06/27-22:33:53.492 908 Recovering log #3
+2026/06/27-22:33:53.494 908 Reusing old log D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\Session Storage/000003.log 

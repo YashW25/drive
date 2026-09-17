@@ -1,0 +1,4 @@
+2026/06/27-22:33:48.283 5d24 Creating DB D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\Site Characteristics Database since it was missing.
+2026/06/27-22:33:50.758 5d24 Reusing MANIFEST D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\Site Characteristics Database/MANIFEST-000001
+2026/06/27-22:33:50.758 5d24 Recovering log #3
+2026/06/27-22:33:50.758 5d24 Reusing old log D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\Site Characteristics Database/000003.log 

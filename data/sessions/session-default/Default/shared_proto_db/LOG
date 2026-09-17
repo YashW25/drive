@@ -1,0 +1,4 @@
+2026/06/27-22:33:52.141 5dc0 Creating DB D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\shared_proto_db since it was missing.
+2026/06/27-22:33:54.037 5dc0 Reusing MANIFEST D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\shared_proto_db/MANIFEST-000001
+2026/06/27-22:33:54.037 5dc0 Recovering log #3
+2026/06/27-22:33:54.037 5dc0 Reusing old log D:\Projects\Codes\SR Marble\OpenWA\data\sessions\session-default\Default\shared_proto_db/000003.log 
