@@ -434,7 +434,7 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed mb-6">
-              Your imported TeleDrive files will <strong>NOT</strong> be deleted. Disconnecting only removes TeleDrive’s authorization to scan or copy files from your Google Drive account.
+              Your imported Zentro Drive files will <strong>NOT</strong> be deleted. Disconnecting only removes Zentro Drive’s authorization to scan or copy files from your Google Drive account.
             </p>
 
             <div className="flex items-center justify-end gap-3">

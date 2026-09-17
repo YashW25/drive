@@ -299,7 +299,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({ onClose,
               <Camera className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-100 font-heading">TeleDrive Camera</h3>
+              <h3 className="text-sm font-bold text-slate-100 font-heading">Zentro Drive Camera</h3>
               <p className="text-[11px] text-slate-400">
                 Saves directly to your default <strong className="text-brand-300">Camera</strong> folder
               </p>

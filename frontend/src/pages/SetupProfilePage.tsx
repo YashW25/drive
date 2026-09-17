@@ -46,7 +46,7 @@ export const SetupProfilePage: React.FC = () => {
           Complete Your Profile
         </h1>
         <p className="text-slate-400 text-sm text-center mb-8">
-          Welcome to TeleDrive! Please provide your name and email to finish setting up your account.
+          Welcome to Zentro Drive! Please provide your name and email to finish setting up your account.
         </p>
 
         {error && (

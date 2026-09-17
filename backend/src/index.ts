@@ -39,7 +39,7 @@ app.use('/storage', express.static(path.resolve(process.env.LOCAL_STORAGE_DIR ||
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    appName: process.env.APP_NAME || 'TeleDrive',
+    appName: process.env.APP_NAME || 'Zentro Drive',
     timestamp: new Date().toISOString(),
   });
 });
@@ -63,7 +63,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 async function startServer() {
   await connectDB();
   app.listen(PORT, () => {
-    console.log(`🚀 [TeleDrive API Server] Running on http://localhost:${PORT}`);
+    console.log(`🚀 [Zentro Drive API Server] Running on http://localhost:${PORT}`);
   });
 }
 

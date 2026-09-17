@@ -58,7 +58,8 @@ export const SharePage: React.FC = () => {
           <div className="p-3 rounded-2xl bg-brand-600 text-white mb-3">
             <HardDrive className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold font-heading">TeleDrive Shared File</h2>
+          <h2 className="text-xl font-bold font-heading">Zentro Drive Shared File</h2>
+          <p className="text-xs text-slate-400 mt-1">Shared via Zentro Drive by Failed Engineers</p>
         </div>
 
         {loading ? (

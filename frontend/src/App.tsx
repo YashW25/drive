@@ -13,7 +13,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   if (loading) {
     return (
       <div className="min-h-screen w-screen bg-slate-950 flex items-center justify-center text-slate-400 text-xs font-medium">
-        Loading TeleDrive...
+        Loading Zentro Drive...
       </div>
     );
   }

@@ -45,7 +45,7 @@ export const PresentationEditorModal: React.FC<PresentationEditorModalProps> = (
       id: 2,
       title: 'Project Details & Goals',
       subtitle: 'Overview Section',
-      body: '• Deliver modern web user experiences\n• Telegram cloud file storage engine',
+      body: '• Deliver modern web user experiences\n• Zentro cloud storage engine by Failed Engineers',
       bgColor: 'bg-slate-900',
     },
   ]);

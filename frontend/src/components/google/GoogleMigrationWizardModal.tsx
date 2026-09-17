@@ -314,7 +314,7 @@ export const GoogleMigrationWizardModal: React.FC<GoogleMigrationWizardModalProp
               {/* Destination Folder Customization */}
               <div className="space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">
-                  Target Backup Folder Name in TeleDrive:
+                  Target Backup Folder Name in Zentro Drive:
                 </label>
                 <div className="relative">
                   <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -365,7 +365,7 @@ export const GoogleMigrationWizardModal: React.FC<GoogleMigrationWizardModalProp
                     />
                     <div>
                       <span className="text-xs font-bold text-slate-100">Selective Item / Folder Import</span>
-                      <p className="text-[11px] text-slate-400">Choose specific files or folders to migrate to TeleDrive</p>
+                      <p className="text-[11px] text-slate-400">Choose specific files or folders to migrate to Zentro Drive</p>
                     </div>
                   </label>
                 </div>
@@ -451,7 +451,7 @@ export const GoogleMigrationWizardModal: React.FC<GoogleMigrationWizardModalProp
                       Delete successfully migrated files from Google Drive
                     </span>
                     <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                      If enabled, TeleDrive will delete only files and folders that have been successfully copied and 100% verified. Nothing will be deleted until the migration is complete and you provide final confirmation.
+                      If enabled, Zentro Drive will delete only files and folders that have been successfully copied and 100% verified. Nothing will be deleted until the migration is complete and you provide final confirmation.
                     </p>
                   </div>
                 </label>

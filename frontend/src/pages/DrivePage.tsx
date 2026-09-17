@@ -311,7 +311,7 @@ export const DrivePage: React.FC = () => {
         mimeType: 'text/javascript',
         extension: 'js',
         hash: 'draft',
-        storageProvider: 'telegram',
+        storageProvider: 'zentro',
         isStarred: false,
         isTrashed: false,
         createdAt: new Date().toISOString(),
@@ -380,7 +380,7 @@ export const DrivePage: React.FC = () => {
         {isDraggingOver && (
           <div className="absolute inset-0 z-40 bg-brand-600/20 backdrop-blur-sm border-2 border-dashed border-brand-400 rounded-2xl flex flex-col items-center justify-center text-brand-300 pointer-events-none animate-fade-in">
             <UploadCloud className="w-16 h-16 mb-2 text-brand-400 animate-bounce" />
-            <p className="text-base font-bold">Drop files or folders here to upload to TeleDrive</p>
+            <p className="text-base font-bold">Drop files or folders here to upload to Zentro Drive</p>
           </div>
         )}
 
@@ -404,7 +404,7 @@ export const DrivePage: React.FC = () => {
                     className="bg-transparent font-medium focus:outline-none text-slate-200 cursor-pointer"
                   >
                     <option value="all" className="bg-slate-900 text-slate-200">All Sources</option>
-                    <option value="teledrive" className="bg-slate-900 text-slate-200">TeleDrive Only</option>
+                    <option value="teledrive" className="bg-slate-900 text-slate-200">Zentro Drive Only</option>
                     <option value="google" className="bg-slate-900 text-slate-200">Google Drive Backup</option>
                   </select>
                 </div>
@@ -556,7 +556,7 @@ export const DrivePage: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed mb-6">
-              Are you sure you want to empty your drive? This will permanently delete <strong>all files and folders</strong> stored in your TeleDrive account. This action cannot be undone.
+              Are you sure you want to empty your drive? This will permanently delete <strong>all files and folders</strong> stored in your Zentro Drive account. This action cannot be undone.
             </p>
 
             <div className="flex items-center justify-end gap-3">

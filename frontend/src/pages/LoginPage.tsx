@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { HardDrive, ArrowRight, ShieldCheck, Phone, KeyRound, Loader2 } from 'lucide-react';
+import { HardDrive, ArrowRight, Phone, KeyRound, Loader2 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const { requestOtp, verifyOtp } = useAuth();
@@ -51,8 +51,8 @@ export const LoginPage: React.FC = () => {
           <div className="p-3.5 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 shadow-xl shadow-brand-500/25 mb-4 text-white">
             <HardDrive className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold font-heading tracking-tight">TeleDrive</h1>
-          <p className="text-xs text-slate-400 mt-1">Your files. Your cloud.</p>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">Zentro Drive</h1>
+          <p className="text-xs text-slate-400 mt-1">Cloud Storage Platform by Failed Engineers</p>
         </div>
 
         {error && (
@@ -96,14 +96,14 @@ export const LoginPage: React.FC = () => {
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Verification Code</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">WhatsApp Verification Code</label>
               <div className="relative">
                 <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
-                  placeholder="Enter 6-digit OTP code"
+                  placeholder="Enter 6-digit WhatsApp OTP"
                   required
                   className="w-full bg-slate-800/80 border border-slate-700/70 focus:border-brand-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-100 tracking-widest font-mono focus:outline-none focus:ring-1 focus:ring-brand-500 transition-all"
                 />
@@ -132,6 +132,12 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
         )}
+
+        <div className="mt-8 pt-4 border-t border-slate-800/80 text-center">
+          <p className="text-[11px] text-slate-500 font-medium">
+            Designed & Built by <span className="text-slate-300 font-semibold">Failed Engineers</span>
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ export class OpenWAService {
     const { apiUrl, sessionId, apiKey } = this.config;
     const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
     const chatId = `${cleanPhone}@c.us`;
-    const message = `Your TeleDrive verification code is: ${code}. Valid for 5 minutes. Do not share this code.`;
+    const message = `Your Zentro Drive verification code is: ${code}. Valid for 5 minutes. Do not share this code.`;
 
     try {
       const response = await fetch(

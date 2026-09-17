@@ -36,7 +36,7 @@ export const StorageDashboard: React.FC<StorageDashboardProps> = ({ onEmptyDrive
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-xl font-bold font-heading text-slate-100 mb-1">Storage Usage</h2>
-            <p className="text-xs text-slate-400">Telegram Cloud Storage Engine Active</p>
+            <p className="text-xs text-slate-400">Zentro Cloud Storage Engine Active — By Failed Engineers</p>
           </div>
           <div className="flex items-center gap-3">
             {onEmptyDrive && (

@@ -89,8 +89,8 @@ export const InstallPwaModal: React.FC = () => {
             </div>
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-100 font-heading">Add TeleDrive to Home Screen</h3>
-            <p className="text-[11px] text-slate-400">Instant app access & full-screen cloud experience</p>
+            <h3 className="text-sm font-bold text-slate-100 font-heading">Add Zentro Drive to Home Screen</h3>
+            <p className="text-[11px] text-slate-400">By Failed Engineers • Instant cloud access</p>
           </div>
         </div>
         <button
@@ -105,7 +105,7 @@ export const InstallPwaModal: React.FC = () => {
       {deferredPrompt ? (
         <div className="space-y-3 pt-1">
           <p className="text-xs text-slate-300 leading-relaxed">
-            Install TeleDrive as a native app on your phone for quick file uploads, instant camera sync, and fast offline navigation.
+            Install Zentro Drive as a native app on your phone for quick file uploads, instant camera sync, and fast offline navigation.
           </p>
           <div className="flex items-center gap-2">
             <button

@@ -421,7 +421,7 @@ export const DriveLayout: React.FC<DriveLayoutProps> = ({
                 }}
               />
             </div>
-            <span className="text-[10px] text-slate-400 block">Telegram Storage Engine</span>
+            <span className="text-[10px] text-slate-400 block font-medium">Zentro Cloud Engine • By Failed Engineers</span>
           </div>
         </aside>
 
@@ -443,7 +443,7 @@ export const DriveLayout: React.FC<DriveLayoutProps> = ({
                     <div className="p-1.5 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 text-white">
                       <HardDrive className="w-4 h-4" />
                     </div>
-                    <span className="font-bold text-sm text-slate-100">TeleDrive Navigation</span>
+                    <span className="font-bold text-sm text-slate-100">Zentro Drive Navigation</span>
                   </div>
                   <button
                     onClick={() => setMobileMenuOpen(false)}
@@ -510,7 +510,7 @@ export const DriveLayout: React.FC<DriveLayoutProps> = ({
                     }}
                   />
                 </div>
-                <span className="text-[10px] text-slate-400 block">Telegram Storage Engine</span>
+                <span className="text-[10px] text-slate-400 block font-medium">Zentro Cloud Engine • By Failed Engineers</span>
               </div>
             </aside>
           </div>

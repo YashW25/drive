@@ -431,7 +431,7 @@ export const CameraPage: React.FC = () => {
               <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-xs sm:text-base font-bold font-heading text-slate-100 truncate">TeleDrive Camera App</h2>
+              <h2 className="text-xs sm:text-base font-bold font-heading text-slate-100 truncate">Zentro Drive Camera App</h2>
               <p className="text-[10px] sm:text-xs text-slate-400 truncate">
                 Continuous capture • Saved to <strong className="text-emerald-400 font-semibold">/Camera</strong>
               </p>

@@ -1,4 +1,4 @@
-// TeleDrive Auto Sync Service for Offline Captured Media
+// Zentro Drive Auto Sync Service for Offline Captured Media (By Failed Engineers)
 
 import { offlineStorage } from './OfflineStorageService';
 import { apiRequest } from './api';
@@ -76,7 +76,7 @@ class OfflineSyncService {
     this.notify(syncedCount);
 
     if (syncedCount > 0) {
-      console.log(`[OfflineSync] Successfully auto-synced ${syncedCount} items to Telegram cloud!`);
+      console.log(`[OfflineSync] Successfully auto-synced ${syncedCount} items to Zentro cloud!`);
     }
 
     return syncedCount;

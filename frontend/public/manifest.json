@@ -1,12 +1,12 @@
 {
-  "name": "TeleDrive Cloud Storage",
-  "short_name": "TeleDrive",
-  "description": "Unlimited Cloud Storage powered by Telegram & Google Drive migration",
-  "start_url": "/drive",
+  "name": "Zentro Drive — By Failed Engineers",
+  "short_name": "Zentro Drive",
+  "description": "Next-generation secure cloud storage platform by Failed Engineers.",
+  "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
   "background_color": "#020617",
   "theme_color": "#020617",
+  "orientation": "any",
   "icons": [
     {
       "src": "/favicon.svg",

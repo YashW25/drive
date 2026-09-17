@@ -124,7 +124,7 @@ class OfflineStorageService {
       extension: file.extension || '',
       size: file.size || blob.size,
       hash: file.hash || '',
-      storageProvider: file.storageProvider || 'telegram',
+      storageProvider: file.storageProvider || 'zentro',
       isStarred: !!file.isStarred,
       isTrashed: !!file.isTrashed,
       blob,
