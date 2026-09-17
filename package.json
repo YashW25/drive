@@ -2,6 +2,10 @@
   "name": "teledrive-monorepo",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "postinstall": "prisma generate --schema=backend/prisma/schema.prisma",
     "build": "cd frontend && npm run build && cd ../backend && npm run build"
