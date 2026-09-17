@@ -1,6 +1,10 @@
 export class OpenWAService {
   private static get config() {
-    const apiUrl = process.env.OPENWA_API_URL || 'https://drive-2gz4.onrender.com';
+    let apiUrl = process.env.OPENWA_API_URL || 'https://drive-2gz4.onrender.com';
+    apiUrl = apiUrl.replace(/\/$/, '');
+    if (!apiUrl.endsWith('/api')) {
+      apiUrl = `${apiUrl}/api`;
+    }
     const sessionId = process.env.OPENWA_SESSION_ID || 'default';
     const apiKey = process.env.OPENWA_API_KEY || 'zentro_openwa_master_key_2026_secret';
     return { apiUrl, sessionId, apiKey };
@@ -17,11 +21,12 @@ export class OpenWAService {
 
     try {
       const response = await fetch(
-        `${apiUrl.replace(/\/$/, '')}/sessions/${sessionId}/messages/send-text`,
+        `${apiUrl}/sessions/${sessionId}/messages/send-text`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-API-Key': apiKey,
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           },
           body: JSON.stringify({
@@ -52,9 +57,12 @@ export class OpenWAService {
     const { apiUrl, sessionId, apiKey } = this.config;
     try {
       const response = await fetch(
-        `${apiUrl.replace(/\/$/, '')}/sessions/${sessionId}/status`,
+        `${apiUrl}/sessions/${sessionId}/status`,
         {
-          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+          headers: {
+            'X-API-Key': apiKey,
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
         }
       );
       if (!response.ok) {
