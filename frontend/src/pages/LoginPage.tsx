@@ -5,19 +5,22 @@ import { HardDrive, ArrowRight, Phone, KeyRound, Loader2 } from 'lucide-react';
 export const LoginPage: React.FC = () => {
   const { requestOtp, verifyOtp } = useAuth();
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [phone, setPhone] = useState('+1234567890');
+  const [phone, setPhone] = useState('+919561485909');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
 
   const handleSendPhone = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfoMessage(null);
     setLoading(true);
     try {
       const res = await requestOtp(phone);
       if (res.devCode) setDevCode(res.devCode);
+      if (res.message) setInfoMessage(res.message);
       setStep('otp');
     } catch (err: any) {
       setError(err.message || 'Failed to send verification code.');
@@ -58,6 +61,12 @@ export const LoginPage: React.FC = () => {
         {error && (
           <div className="mb-6 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 text-center">
             {error}
+          </div>
+        )}
+
+        {infoMessage && (
+          <div className="mb-6 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 text-center">
+            {infoMessage}
           </div>
         )}
 

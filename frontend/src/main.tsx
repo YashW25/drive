@@ -16,13 +16,19 @@ if ('serviceWorker' in navigator) {
           console.warn('[SW] Service Worker registration failed:', err);
         });
     });
-  } else {
-    // Unregister stale service worker in dev mode to prevent cached empty CSS
+    // Unregister stale service worker and clear cache storage in dev mode to prevent cached empty CSS
     navigator.serviceWorker.getRegistrations().then((registrations) => {
       for (const registration of registrations) {
         registration.unregister();
       }
     });
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        for (const key of keys) {
+          caches.delete(key);
+        }
+      });
+    }
   }
 }
 

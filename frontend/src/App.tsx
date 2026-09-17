@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DrivePage } from './pages/DrivePage';
 import { SetupProfilePage } from './pages/SetupProfilePage';
 import { SharePage } from './pages/SharePage';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { InstallPwaModal } from './components/pwa/InstallPwaModal';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -61,6 +62,14 @@ export const AppContent: React.FC = () => {
           }
         />
         <Route path="/share/:token" element={<SharePage />} />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminDashboardPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to={user ? (user.isProfileComplete ? "/drive" : "/login") : "/login"} replace />} />
       </Routes>
       <InstallPwaModal />

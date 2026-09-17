@@ -39,3 +39,15 @@ export async function authenticate(
     res.status(401).json({ error: error.message || 'Invalid session' });
   }
 }
+
+export function requireAdmin(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (!req.user || req.user.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+    return;
+  }
+  next();
+}

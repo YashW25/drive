@@ -7,11 +7,23 @@ import { OpenWAService } from './openwa.service.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'teledrive_default_jwt_secret_2026';
 
 export class AuthService {
+  static normalizePhone(phoneNumber: string): string {
+    let clean = phoneNumber.replace(/[^0-9+]/g, '');
+    if (!clean.startsWith('+')) {
+      if (clean.length === 10) {
+        clean = '+91' + clean;
+      } else {
+        clean = '+' + clean;
+      }
+    }
+    return clean;
+  }
+
   /**
    * Request OTP code for a given mobile phone number
    */
   static async requestOtp(phoneNumber: string): Promise<{ phone: string; message: string; devCode?: string }> {
-    const cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
+    const cleanPhone = this.normalizePhone(phoneNumber);
     if (!cleanPhone || cleanPhone.length < 8) {
       throw new Error('Invalid mobile phone number format.');
     }
@@ -53,7 +65,7 @@ export class AuthService {
     ipAddress?: string,
     userAgent?: string
   ) {
-    const cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
+    const cleanPhone = this.normalizePhone(phoneNumber);
     const codeHash = crypto.createHash('sha256').update(code).digest('hex');
 
     let isValid = false;
@@ -146,24 +158,31 @@ export class AuthService {
    * Update user profile details
    */
   static async updateProfile(userId: string, data: { displayName?: string; email?: string }) {
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        ...(data.displayName ? { displayName: data.displayName } : {}),
-        ...(data.email ? { email: data.email } : {}),
-        isProfileComplete: true,
-      },
-    });
+    try {
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(data.displayName ? { displayName: data.displayName } : {}),
+          ...(data.email ? { email: data.email } : {}),
+          isProfileComplete: true,
+        },
+      });
 
-    return {
-      id: user.id,
-      phoneNumber: user.phoneNumber,
-      displayName: user.displayName,
-      email: user.email,
-      isProfileComplete: user.isProfileComplete,
-      role: user.role,
-      avatarUrl: user.avatarUrl,
-    };
+      return {
+        id: user.id,
+        phoneNumber: user.phoneNumber,
+        displayName: user.displayName,
+        email: user.email,
+        isProfileComplete: user.isProfileComplete,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
+      };
+    } catch (err: any) {
+      if (err.code === 'P2002') {
+        throw new Error('This email address is already registered to another account.');
+      }
+      throw err;
+    }
   }
 
   /**

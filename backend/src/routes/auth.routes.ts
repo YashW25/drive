@@ -59,8 +59,8 @@ router.put('/profile', authenticate, async (req: AuthenticatedRequest, res: Resp
   }
 });
 
-// GET /api/auth/me
-router.get('/me', authenticate, (req: AuthenticatedRequest, res: Response) => {
+// GET /api/auth/me & GET /api/auth/profile
+router.get(['/me', '/profile'], authenticate, (req: AuthenticatedRequest, res: Response) => {
   res.json({ user: req.user });
 });
 

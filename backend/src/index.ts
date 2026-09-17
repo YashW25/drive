@@ -10,6 +10,7 @@ import fileRoutes from './routes/file.routes.js';
 import shareRoutes from './routes/share.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import googleRoutes from './routes/google.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ app.use('/api/files', fileRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/google', googleRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error Handling Middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -75,4 +77,10 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  startServer();
+} else {
+  connectDB().catch(console.error);
+}
+
+export default app;

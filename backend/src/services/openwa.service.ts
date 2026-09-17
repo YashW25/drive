@@ -1,6 +1,6 @@
 export class OpenWAService {
   private static get config() {
-    let apiUrl = process.env.OPENWA_API_URL || 'https://drive-2gz4.onrender.com';
+    let apiUrl = process.env.OPENWA_API_URL || 'http://localhost:2785';
     apiUrl = apiUrl.replace(/\/$/, '');
     if (!apiUrl.endsWith('/api')) {
       apiUrl = `${apiUrl}/api`;
@@ -11,17 +11,42 @@ export class OpenWAService {
   }
 
   /**
+   * Dynamically discover active connected session ID if default fails
+   */
+  private static async getActiveSessionId(): Promise<string> {
+    const { apiUrl, sessionId, apiKey } = this.config;
+    try {
+      const res = await fetch(`${apiUrl}/sessions`, {
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (res.ok) {
+        const sessions: any = await res.json();
+        if (Array.isArray(sessions)) {
+          const match = sessions.find((s: any) => (s.name === sessionId || s.id === sessionId) && s.status === 'ready') ||
+                        sessions.find((s: any) => s.status === 'ready') ||
+                        sessions.find((s: any) => s.name === sessionId || s.id === sessionId) ||
+                        sessions[0];
+          if (match?.id) return match.id;
+        }
+      }
+    } catch (_) {}
+
+    return sessionId;
+  }
+
+  /**
    * Send WhatsApp OTP message via OpenWA
    */
   static async sendOtp(phoneNumber: string, code: string): Promise<boolean> {
-    const { apiUrl, sessionId, apiKey } = this.config;
+    const { apiUrl, apiKey } = this.config;
+    const activeSessionId = await this.getActiveSessionId();
     const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
     const chatId = `${cleanPhone}@c.us`;
     const message = `Your Zentro Drive verification code is: ${code}. Valid for 5 minutes. Do not share this code.`;
 
     try {
       const response = await fetch(
-        `${apiUrl}/sessions/${sessionId}/messages/send-text`,
+        `${apiUrl}/sessions/${activeSessionId}/messages/send-text`,
         {
           method: 'POST',
           headers: {
@@ -37,7 +62,7 @@ export class OpenWAService {
       );
 
       if (response.ok) {
-        console.log(`[OpenWAService] OTP sent successfully to ${chatId}.`);
+        console.log(`[OpenWAService] OTP sent successfully to ${chatId} via session ${activeSessionId}.`);
         return true;
       } else {
         const text = await response.text();
@@ -54,10 +79,11 @@ export class OpenWAService {
    * Get OpenWA Session Connection Status
    */
   static async getStatus(): Promise<{ connected: boolean; status: string; qrCode?: string }> {
-    const { apiUrl, sessionId, apiKey } = this.config;
+    const { apiUrl, apiKey } = this.config;
+    const activeSessionId = await this.getActiveSessionId();
     try {
       const response = await fetch(
-        `${apiUrl}/sessions/${sessionId}/status`,
+        `${apiUrl}/sessions/${activeSessionId}/status`,
         {
           headers: {
             'X-API-Key': apiKey,
@@ -70,7 +96,7 @@ export class OpenWAService {
       }
       const data: any = await response.json();
       return {
-        connected: data?.connected || data?.status === 'CONNECTED',
+        connected: data?.connected || data?.status === 'ready' || data?.status === 'CONNECTED',
         status: data?.status || 'DISCONNECTED',
         qrCode: data?.qrCode,
       };

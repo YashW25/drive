@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useDrive } from '../../context/DriveContext';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -26,6 +27,7 @@ import {
   X,
   WifiOff,
   HardDriveDownload,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface DriveLayoutProps {
@@ -175,23 +177,48 @@ export const DriveLayout: React.FC<DriveLayoutProps> = ({
             <span className="sm:hidden">AI</span>
           </button>
 
+          {/* Admin Panel Button */}
+          {user?.role === 'ADMIN' && (
+            <Link
+              to="/admin"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 hover:border-amber-500/60 rounded-xl text-xs font-semibold text-amber-300 transition-all shadow-sm"
+              title="Admin Control Panel"
+            >
+              <ShieldCheck className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">Admin Panel</span>
+              <span className="sm:hidden">Admin</span>
+            </Link>
+          )}
+
           {/* User Profile */}
           <div className="relative">
             <button
               onClick={() => setProfileMenuOpen(!profileMenuOpen)}
               className="flex items-center gap-1 sm:gap-2 p-1 sm:p-1.5 rounded-xl hover:bg-slate-800/80 text-slate-300 transition-colors"
             >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-md">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-md relative">
                 {user?.displayName ? user.displayName[0].toUpperCase() : 'U'}
+                {user?.role === 'ADMIN' && (
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 border-2 border-slate-950 rounded-full flex items-center justify-center text-[8px] font-black text-slate-950" title="Admin Account">
+                    ★
+                  </span>
+                )}
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden xs:inline" />
             </button>
 
             {profileMenuOpen && (
-              <div className="absolute right-0 mt-2 w-52 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-2 z-50 text-xs text-slate-200 animate-pop-in">
-                <div className="px-3 py-2 border-b border-slate-800">
-                  <p className="font-semibold truncate">{user?.displayName}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{user?.email || user?.phoneNumber}</p>
+              <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-2 z-50 text-xs text-slate-200 animate-pop-in">
+                <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2">
+                  <div className="overflow-hidden">
+                    <p className="font-semibold truncate">{user?.displayName}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{user?.email || user?.phoneNumber}</p>
+                  </div>
+                  {user?.role === 'ADMIN' && (
+                    <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded-md uppercase tracking-wider flex-shrink-0">
+                      ADMIN
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => {
@@ -205,6 +232,16 @@ export const DriveLayout: React.FC<DriveLayoutProps> = ({
                   <UserIcon className="w-4 h-4 text-brand-400" />
                   My Profile
                 </button>
+                {user?.role === 'ADMIN' && (
+                  <Link
+                    to="/admin"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-amber-300 hover:bg-amber-500/10 transition-colors mt-1 font-semibold"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    Admin Control Panel
+                  </Link>
+                )}
                 <button
                   onClick={() => {
                     setProfileMenuOpen(false);
