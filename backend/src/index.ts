@@ -45,7 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/storage', express.static(path.resolve(process.env.LOCAL_STORAGE_DIR || './storage_data')));
 
 // Health Check
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health', '/'], (req, res) => {
   res.json({
     status: 'ok',
     appName: process.env.APP_NAME || 'Zentro Drive',
@@ -53,14 +53,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Routes Registration
-app.use('/api/auth', authRoutes);
-app.use('/api/folders', folderRoutes);
-app.use('/api/files', fileRoutes);
-app.use('/api/share', shareRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/google', googleRoutes);
-app.use('/api/admin', adminRoutes);
+// Routes Registration (Supports both /api/* and stripped /* serverless routes on Vercel)
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/folders', '/folders'], folderRoutes);
+app.use(['/api/files', '/files'], fileRoutes);
+app.use(['/api/share', '/share'], shareRoutes);
+app.use(['/api/ai', '/ai'], aiRoutes);
+app.use(['/api/google', '/google'], googleRoutes);
+app.use(['/api/admin', '/admin'], adminRoutes);
 
 // Error Handling Middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

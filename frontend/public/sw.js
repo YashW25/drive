@@ -68,6 +68,7 @@ self.addEventListener('fetch', (event) => {
         if (event.request.mode === 'navigate') {
           return caches.match('/index.html');
         }
+        return new Response('Network Error', { status: 503, statusText: 'Service Unavailable' });
       });
     })
   );
