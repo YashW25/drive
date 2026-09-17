@@ -1164,17 +1164,35 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
    */
   async requestPairingCode(id: string, phoneNumber: string): Promise<{ pairingCode: string; status: SessionStatus }> {
     const session = await this.findOne(id);
-    const engine = this.engines.get(id);
+    let engine = this.engines.get(id);
 
     if (!engine) {
-      throw new BadRequestException('Session is not started. Call POST /sessions/:id/start first.');
-    }
-    if (session.status === SessionStatus.READY) {
-      throw new BadRequestException('Session is already authenticated, no pairing needed');
+      this.logger.log(`Session ${id} not active. Auto-starting session for pairing code request...`);
+      await this.start(id);
+      engine = this.engines.get(id);
     }
 
-    const pairingCode = await engine.requestPairingCode(phoneNumber);
-    return { pairingCode, status: session.status };
+    if (!engine) {
+      throw new BadRequestException('Session engine could not be started. Please try starting the session manually first.');
+    }
+
+    if (session.status === SessionStatus.READY) {
+      throw new BadRequestException('Session is already authenticated and connected.');
+    }
+
+    // Baileys requires digits only (no leading '+', spaces, or hyphens), e.g. 919561485909
+    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      throw new BadRequestException('Invalid phone number. Provide country code + 10-digit number (e.g. 919561485909)');
+    }
+
+    try {
+      const pairingCode = await engine.requestPairingCode(cleanPhone);
+      return { pairingCode, status: session.status };
+    } catch (err: any) {
+      this.logger.error(`Pairing code generation error for session ${id}: ${err.message}`, err.stack);
+      throw new BadRequestException(err.message || 'Failed to request WhatsApp pairing code.');
+    }
   }
 
   getEngine(id: string): IWhatsAppEngine | undefined {

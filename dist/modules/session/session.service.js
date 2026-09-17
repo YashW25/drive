@@ -797,15 +797,30 @@ let SessionService = class SessionService {
     }
     async requestPairingCode(id, phoneNumber) {
         const session = await this.findOne(id);
-        const engine = this.engines.get(id);
+        let engine = this.engines.get(id);
         if (!engine) {
-            throw new common_1.BadRequestException('Session is not started. Call POST /sessions/:id/start first.');
+            this.logger.log(`Session ${id} not active. Auto-starting session for pairing code request...`);
+            await this.start(id);
+            engine = this.engines.get(id);
+        }
+        if (!engine) {
+            throw new common_1.BadRequestException('Session engine could not be started. Please try starting the session manually first.');
         }
         if (session.status === session_entity_1.SessionStatus.READY) {
-            throw new common_1.BadRequestException('Session is already authenticated, no pairing needed');
+            throw new common_1.BadRequestException('Session is already authenticated and connected.');
         }
-        const pairingCode = await engine.requestPairingCode(phoneNumber);
-        return { pairingCode, status: session.status };
+        const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+        if (!cleanPhone || cleanPhone.length < 10) {
+            throw new common_1.BadRequestException('Invalid phone number. Provide country code + 10-digit number (e.g. 919561485909)');
+        }
+        try {
+            const pairingCode = await engine.requestPairingCode(cleanPhone);
+            return { pairingCode, status: session.status };
+        }
+        catch (err) {
+            this.logger.error(`Pairing code generation error for session ${id}: ${err.message}`, err.stack);
+            throw new common_1.BadRequestException(err.message || 'Failed to request WhatsApp pairing code.');
+        }
     }
     getEngine(id) {
         return this.engines.get(id);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans, useTranslation } from 'react-i18next';
-import { Plus, QrCode, RefreshCw, Trash2, Eye, Loader2, Play, Square, X, Search, Filter, Skull } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Trash2, Eye, Loader2, Play, Square, X, Search, Filter, Skull, Smartphone } from 'lucide-react';
 import { sessionApi, type Session } from '../services/api';
 import { queryKeys } from '../hooks/queries';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -29,6 +29,13 @@ export function Sessions() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [killConfirmId, setKillConfirmId] = useState<string | null>(null);
+
+  // Pairing Code state (Link via Phone Number instead of QR)
+  const [pairingModalSessionId, setPairingModalSessionId] = useState<string | null>(null);
+  const [pairingPhoneInput, setPairingPhoneInput] = useState('');
+  const [pairingCodeResult, setPairingCodeResult] = useState<string | null>(null);
+  const [requestingPairing, setRequestingPairing] = useState(false);
+  const [pairingError, setPairingError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async (): Promise<Session[]> => {
     try {
@@ -129,6 +136,24 @@ export function Sessions() {
       if (qrRefreshInterval.current) clearInterval(qrRefreshInterval.current);
     };
   }, [qrData, fetchQR]);
+
+  const handleRequestPairingCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pairingModalSessionId || !pairingPhoneInput.trim()) return;
+    setRequestingPairing(true);
+    setPairingError(null);
+    try {
+      const cleanPhone = pairingPhoneInput.replace(/[^0-9]/g, '');
+      const res = await sessionApi.requestPairingCode(pairingModalSessionId, cleanPhone);
+      setPairingCodeResult(res.pairingCode);
+      toast.success('Pairing Code Generated!', 'Enter this 8-character code in WhatsApp under "Link with phone number instead".');
+    } catch (err: any) {
+      setPairingError(err.message || 'Failed to request pairing code');
+      toast.error('Pairing Code Error', err.message || 'Failed to request pairing code');
+    } finally {
+      setRequestingPairing(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!newSessionName.trim()) return;
@@ -397,6 +422,21 @@ export function Sessions() {
                   <p className="qr-auto-refresh">
                     <RefreshCw size={14} className="spin-slow" /> {t('sessions.qr.autoRefresh')}
                   </p>
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPairingModalSessionId(qrData.sessionId);
+                        setPairingPhoneInput('+919561485909');
+                        setPairingCodeResult(null);
+                        setPairingError(null);
+                        setQrData(null);
+                      }}
+                      style={{ fontSize: '13px', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Smartphone size={16} /> Link with Phone Number (Pairing Code OTP) instead
+                    </button>
+                  </div>
                 </>
               ) : (
                 <div style={{ padding: '2rem' }}>
@@ -513,6 +553,79 @@ export function Sessions() {
               </button>
               <button className="btn-danger" onClick={() => handleForceKill(killConfirmId)}>
                 {t('sessions.forceKill.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pairingModalSessionId && (
+        <div className="modal-overlay" onClick={() => setPairingModalSessionId(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h2>Link via Phone Number (Pairing Code OTP)</h2>
+              <button className="btn-icon" onClick={() => setPairingModalSessionId(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                <Smartphone size={44} style={{ margin: '0 auto 8px auto', color: '#38bdf8' }} />
+                <p className="text-muted" style={{ fontSize: '13px' }}>
+                  Get an 8-character OTP code to link WhatsApp directly without scanning the QR code.
+                </p>
+              </div>
+
+              {pairingError && (
+                <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px' }}>
+                  {pairingError}
+                </div>
+              )}
+
+              {pairingCodeResult ? (
+                <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '16px', borderRadius: '12px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600 }}>WhatsApp Pairing Code:</p>
+                  <div style={{ fontSize: '32px', fontWeight: 800, letterSpacing: '6px', color: '#38bdf8', fontFamily: 'monospace', margin: '8px 0' }}>
+                    {pairingCodeResult}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '16px', textAlign: 'left', background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: '10px', lineHeight: '1.6' }}>
+                    <p style={{ marginBottom: '4px' }}>📱 <strong>How to enter in WhatsApp:</strong></p>
+                    <p>1. Open WhatsApp on your phone.</p>
+                    <p>2. Tap <strong>Menu (⋮) / Settings → Linked Devices</strong>.</p>
+                    <p>3. Tap <strong>Link a Device</strong>.</p>
+                    <p>4. At bottom, tap <strong>"Link with phone number instead"</strong>.</p>
+                    <p>5. Enter this code: <strong style={{ color: '#38bdf8', fontSize: '14px' }}>{pairingCodeResult}</strong>.</p>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleRequestPairingCode}>
+                  <div className="input-group">
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px', display: 'block' }}>
+                      WhatsApp Phone Number (with Country Code)
+                    </label>
+                    <input
+                      type="text"
+                      value={pairingPhoneInput}
+                      onChange={e => setPairingPhoneInput(e.target.value)}
+                      placeholder="+919561485909"
+                      required
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: '#0f172a', border: '1px solid #334155', color: '#fff', fontSize: '14px', fontFamily: 'monospace' }}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={requestingPairing || !pairingPhoneInput.trim()}
+                    style={{ width: '100%', marginTop: '16px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 600 }}
+                  >
+                    {requestingPairing ? <Loader2 className="animate-spin" size={18} /> : 'Get 8-Digit Pairing Code'}
+                  </button>
+                </form>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setPairingModalSessionId(null)}>
+                {t('common.close')}
               </button>
             </div>
           </div>

@@ -15,10 +15,10 @@
     "type": "engine",
     "name": "Baileys Engine",
     "version": "1.0.0",
-    "status": "disabled",
+    "status": "enabled",
     "config": {},
     "builtIn": true,
     "installedAt": "2026-06-27T10:07:42.942Z",
-    "updatedAt": "2026-06-27T19:17:52.224Z"
+    "updatedAt": "2026-09-17T20:46:49.683Z"
   }
 ]

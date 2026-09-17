@@ -46,7 +46,7 @@ const logger_service_1 = require("../../common/services/logger.service");
 const baileys_session_store_1 = require("./baileys-session-store");
 const inbound_media_cap_1 = require("./inbound-media-cap");
 const concurrency_limiter_1 = require("./concurrency-limiter");
-const BAILEYS_BROWSER = ['OpenWA', 'Chrome', '120.0.0'];
+const BAILEYS_BROWSER = ['Ubuntu', 'Chrome', '20.0.0'];
 function createSilentLogger() {
     const noop = () => { };
     const logger = {

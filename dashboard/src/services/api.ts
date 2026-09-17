@@ -312,13 +312,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const response = await fetch(url, { ...options, headers });
 
   if (response.status === 401) {
-    // The stored API key is invalid/expired/revoked — clear it and return to login
-    // so the user isn't stuck on a dashboard that 401s every request.
     sessionStorage.removeItem('openwa_api_key');
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.location.assign('/');
-      // The page is navigating away — halt this request's promise chain so callers neither
-      // throw the generic error below (flashing a toast) nor receive an undefined payload.
       return new Promise<T>(() => {});
     }
   }
@@ -378,6 +374,11 @@ export const sessionApi = {
   stop: (id: string) => request<Session>(`/sessions/${id}/stop`, { method: 'POST' }),
   forceKill: (id: string) => request<Session>(`/sessions/${id}/force-kill`, { method: 'POST' }),
   getQR: (id: string) => request<{ qrCode: string; status: string }>(`/sessions/${id}/qr`),
+  requestPairingCode: (id: string, phoneNumber: string) =>
+    request<{ pairingCode: string; status: string }>(`/sessions/${id}/pairing-code`, {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber }),
+    }),
   getStats: () => request<SessionStats>('/sessions/stats/overview'),
   getGroups: (id: string) =>
     request<{ id: string; name: string; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),

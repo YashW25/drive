@@ -23,8 +23,8 @@ __decorate([
     }),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
-    (0, class_validator_1.Matches)(/^[0-9]{6,15}$/, {
-        message: 'phoneNumber must be digits only in international format (country code + number), e.g. 628123456789',
+    (0, class_validator_1.Matches)(/^\+?[0-9]{6,15}$/, {
+        message: 'phoneNumber must be in international format (country code + number), e.g. 919561485909 or +919561485909',
     }),
     __metadata("design:type", String)
 ], RequestPairingCodeDto.prototype, "phoneNumber", void 0);

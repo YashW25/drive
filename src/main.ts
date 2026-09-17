@@ -171,12 +171,12 @@ async function bootstrap() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          styleSrc: ["'self'", 'https://fonts.googleapis.com'],
-          scriptSrc: ["'self'"],
-          imgSrc: ["'self'", 'data:', 'blob:', supabaseUrl].filter(Boolean) as string[],
-          mediaSrc: ["'self'", 'data:', 'blob:', supabaseUrl].filter(Boolean) as string[],
-          connectSrc: ["'self'", supabaseUrl, supabaseWss].filter(Boolean) as string[],
-          fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https://*.supabase.co', supabaseUrl].filter(Boolean) as string[],
+          mediaSrc: ["'self'", 'data:', 'blob:', 'https://*.supabase.co', supabaseUrl].filter(Boolean) as string[],
+          connectSrc: ["'self'", 'https://*.supabase.co', 'wss://*.supabase.co', 'ws:', 'wss:', supabaseUrl, supabaseWss].filter(Boolean) as string[],
+          fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
           objectSrc: ["'none'"],
           upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
         },

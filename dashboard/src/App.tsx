@@ -8,7 +8,7 @@ import { ToastProvider } from './components/Toast';
 import { RoleProvider, useRole, type UserRole } from './hooks/useRole';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { API_BASE_URL } from './services/api';
-import { isSupabaseConfigured, supabaseUrl, supabaseAnonKey } from './services/supabase';
+import { isSupabaseConfigured } from './services/supabase';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import './App.css';
 
@@ -60,6 +60,11 @@ function AppContent() {
   };
 
   useEffect(() => {
+    const keyOnMount = sessionStorage.getItem('openwa_api_key');
+    if (keyOnMount) {
+      validateToken(keyOnMount);
+    }
+
     if (!isSupabaseConfigured) {
       setIsInitializing(false);
       return;
@@ -90,10 +95,13 @@ function AppContent() {
             validateToken(key);
           }
         } else if (event === 'SIGNED_OUT') {
-          setApiKey('');
-          setIsAuthenticated(false);
-          setRole(null);
-          sessionStorage.removeItem('openwa_api_key');
+          const currentKey = sessionStorage.getItem('openwa_api_key');
+          if (currentKey && currentKey.startsWith('ey')) {
+            setApiKey('');
+            setIsAuthenticated(false);
+            setRole(null);
+            sessionStorage.removeItem('openwa_api_key');
+          }
         }
       });
 
@@ -104,8 +112,6 @@ function AppContent() {
   }, []);
 
   const handleLogin = (key: string) => {
-    // onLogin from Login.tsx passes the token, the onAuthStateChange listener will also pick it up.
-    // We just manually trigger it here to ensure immediate UI feedback.
     setApiKey(key);
     sessionStorage.setItem('openwa_api_key', key);
     setIsAuthenticated(true);
@@ -113,9 +119,13 @@ function AppContent() {
   };
 
   const handleLogout = async () => {
+    setApiKey('');
+    setIsAuthenticated(false);
+    setRole(null);
+    sessionStorage.removeItem('openwa_api_key');
     const { supabase } = await import('./services/supabase');
     if (supabase) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut().catch(() => {});
     }
   };
 
@@ -127,20 +137,6 @@ function AppContent() {
 
   if (isInitializing) {
     return loadingFallback;
-  }
-
-  if (!isSupabaseConfigured) {
-    return (
-      <div style={{ padding: '2rem', fontFamily: 'monospace', color: 'red' }}>
-        <h2>Supabase configuration missing.</h2>
-        <p>Missing:</p>
-        <ul>
-          {!supabaseUrl && <li>VITE_SUPABASE_URL</li>}
-          {!supabaseAnonKey && <li>VITE_SUPABASE_ANON_KEY</li>}
-        </ul>
-        <p>This deployment was built without the required frontend configuration.</p>
-      </div>
-    );
   }
 
   if (!isAuthenticated) {

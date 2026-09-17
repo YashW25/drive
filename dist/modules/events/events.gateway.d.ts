@@ -12,7 +12,7 @@ export declare class EventsGateway implements OnGatewayInit, OnGatewayConnection
     afterInit(): void;
     handleConnection(client: Socket): Promise<void>;
     handleDisconnect(client: Socket): void;
-    handleMessage(client: Socket, message: WSClientMessage): WSErrorResponse | Promise<WSErrorResponse | WSSubscribedResponse> | WSUnsubscribedResponse | WSPongResponse;
+    handleMessage(client: Socket, message: WSClientMessage): WSUnsubscribedResponse | WSErrorResponse | WSPongResponse | Promise<WSSubscribedResponse | WSErrorResponse>;
     private handleSubscribe;
     private handleUnsubscribe;
     private handlePing;

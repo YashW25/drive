@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Languages } from 'lucide-react';
 import { GithubIcon } from '../components/GithubIcon';
@@ -22,25 +22,63 @@ export function Login({ onLogin }: LoginProps) {
     void i18n.changeLanguage(language);
   };
 
+  const [authMode, setAuthMode] = useState<'masterKey' | 'email'>('masterKey');
+  const [apiKeyInput, setApiKeyInput] = useState('zentro_openwa_master_key_2026_secret');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim()) {
-      setError(t('login.emailPasswordRequired', 'Email and password are required.'));
-      return;
-    }
     setIsLoading(true);
     setError('');
 
-    try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    if (authMode === 'masterKey') {
+      const keyToTest = apiKeyInput.trim() || password.trim() || email.trim();
+      if (!keyToTest) {
+        setError(t('login.apiKeyRequired', 'API Key is required.'));
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const response = await fetch('/api/auth/validate', {
+          method: 'POST',
+          headers: { 'X-API-Key': keyToTest },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.valid) {
+            onLogin(keyToTest);
+            setIsLoading(false);
+            return;
+          }
+        }
+        setError(t('login.invalidApiKey', 'Invalid API Master Key.'));
+      } catch {
+        setError(t('login.connectionError', 'Failed to connect to OpenWA server.'));
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
-      if (authError) {
-        setError(authError.message);
-      } else if (data.session) {
-        onLogin(data.session.access_token);
+    if (!email.trim() || !password.trim()) {
+      setError(t('login.emailPasswordRequired', 'Email and password are required.'));
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      if (supabase) {
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (authError) {
+          setError(authError.message);
+        } else if (data.session) {
+          onLogin(data.session.access_token);
+        }
+      } else {
+        setError(t('login.supabaseNotConfigured', 'Supabase is not configured. Use API Master Key login.'));
       }
     } catch {
       setError(t('login.connectionError', 'Failed to connect.'));
@@ -66,7 +104,7 @@ export function Login({ onLogin }: LoginProps) {
           <Languages size={18} />
           <select
             value={currentLang}
-            onChange={event => changeLanguage(event.target.value as SupportedLanguage)}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => changeLanguage(event.target.value as SupportedLanguage)}
             aria-label={t('common.language')}
           >
             {languageOptions.map(option => (
@@ -77,35 +115,73 @@ export function Login({ onLogin }: LoginProps) {
           </select>
         </div>
 
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <button
+            type="button"
+            className={`connect-btn ${authMode === 'masterKey' ? '' : 'secondary'}`}
+            style={{ flex: 1, padding: '6px 12px', fontSize: '12px', opacity: authMode === 'masterKey' ? 1 : 0.6 }}
+            onClick={() => setAuthMode('masterKey')}
+          >
+            API Master Key
+          </button>
+          <button
+            type="button"
+            className={`connect-btn ${authMode === 'email' ? '' : 'secondary'}`}
+            style={{ flex: 1, padding: '6px 12px', fontSize: '12px', opacity: authMode === 'email' ? 1 : 0.6 }}
+            onClick={() => setAuthMode('email')}
+          >
+            Supabase Email
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="login-form">
-          <div className="input-group">
-            <label htmlFor="email">{t('login.email', 'Email')}</label>
-            <div className="input-wrapper">
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder={t('login.emailPlaceholder', 'name@example.com')}
-                className={error ? 'error' : ''}
-              />
+          {authMode === 'masterKey' ? (
+            <div className="input-group">
+              <label htmlFor="apiKey">API Master Key</label>
+              <div className="input-wrapper">
+                <input
+                  id="apiKey"
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
+                  placeholder="Enter API Master Key"
+                  className={error ? 'error' : ''}
+                />
+              </div>
+              {error && <span className="error-message" style={{ color: '#ef4444', fontSize: '12px', marginTop: '4px', display: 'block' }}>{error}</span>}
             </div>
-          </div>
-          
-          <div className="input-group" style={{ marginTop: '1rem' }}>
-            <label htmlFor="password">{t('login.password', 'Password')}</label>
-            <div className="input-wrapper">
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder={t('login.passwordPlaceholder', 'Your password')}
-                className={error ? 'error' : ''}
-              />
-            </div>
-            {error && <span className="error-message">{error}</span>}
-          </div>
+          ) : (
+            <>
+              <div className="input-group">
+                <label htmlFor="email">{t('login.email', 'Email')}</label>
+                <div className="input-wrapper">
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                    placeholder={t('login.emailPlaceholder', 'name@example.com')}
+                    className={error ? 'error' : ''}
+                  />
+                </div>
+              </div>
+              
+              <div className="input-group" style={{ marginTop: '1rem' }}>
+                <label htmlFor="password">{t('login.password', 'Password')}</label>
+                <div className="input-wrapper">
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+                    placeholder={t('login.passwordPlaceholder', 'Your password')}
+                    className={error ? 'error' : ''}
+                  />
+                </div>
+                {error && <span className="error-message" style={{ color: '#ef4444', fontSize: '12px', marginTop: '4px', display: 'block' }}>{error}</span>}
+              </div>
+            </>
+          )}
 
           <button type="submit" className="connect-btn" disabled={isLoading} style={{ marginTop: '1.5rem' }}>
             {isLoading ? t('login.connecting') : t('login.connect')}

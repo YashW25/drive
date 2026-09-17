@@ -9,8 +9,8 @@ export class RequestPairingCodeDto {
   @IsString()
   @IsNotEmpty()
   // Digits only (no +, spaces, or dashes); 6–15 digits covers E.164.
-  @Matches(/^[0-9]{6,15}$/, {
-    message: 'phoneNumber must be digits only in international format (country code + number), e.g. 628123456789',
+  @Matches(/^\+?[0-9]{6,15}$/, {
+    message: 'phoneNumber must be in international format (country code + number), e.g. 919561485909 or +919561485909',
   })
   phoneNumber: string;
 }
