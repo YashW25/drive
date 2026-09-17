@@ -1,8 +1,8 @@
 export class OpenWAService {
   private static get config() {
-    const apiUrl = process.env.OPENWA_API_URL || 'http://localhost:2000/api';
+    const apiUrl = process.env.OPENWA_API_URL || 'https://drive-2gz4.onrender.com';
     const sessionId = process.env.OPENWA_SESSION_ID || 'default';
-    const apiKey = process.env.OPENWA_API_KEY || '';
+    const apiKey = process.env.OPENWA_API_KEY || 'zentro_openwa_master_key_2026_secret';
     return { apiUrl, sessionId, apiKey };
   }
 
