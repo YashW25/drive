@@ -178,14 +178,10 @@ async function bootstrap() {
           connectSrc: ["'self'", supabaseUrl, supabaseWss].filter(Boolean) as string[],
           fontSrc: ["'self'", 'https://fonts.gstatic.com'],
           objectSrc: ["'none'"],
-          upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+          upgradeInsecureRequests: null,
         },
       },
-      hsts: {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true,
-      },
+      hsts: false,
       noSniff: true,
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
       // Disable for API usage
