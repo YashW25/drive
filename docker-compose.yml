@@ -50,6 +50,10 @@ services:
       - /tmp
     pids_limit: 512
     mem_limit: ${OPENWA_MEM_LIMIT:-2g}
+
+    ports:
+      - '2785:2785'
+
     expose:
       - '2785'
 
