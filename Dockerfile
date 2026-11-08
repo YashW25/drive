@@ -98,8 +98,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/dashboard/dist ./dashboard/dist
 
 # Create data directories with correct ownership
-RUN mkdir -p ./data/sessions ./data/media && \
-    chown -R openwa:openwa /app
+RUN mkdir -p /app/data/sessions /app/data/media && \
+    chown -R openwa:openwa /app/data
 
 # The non-root openwa user has no home of its own (`useradd -r`, no -m). Chromium resolves the home
 # dir from the passwd entry via glib's getpwuid() — it IGNORES $HOME — so it tries to read/write
