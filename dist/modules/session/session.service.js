@@ -164,12 +164,6 @@ let SessionService = class SessionService {
         if (existing) {
             throw new common_1.ConflictException(`Session with name '${dto.name}' already exists`);
         }
-        if (ownerSupabaseId) {
-            const existingForUser = await this.sessionRepository.findOne({ where: { ownerSupabaseId } });
-            if (existingForUser) {
-                throw new common_1.ConflictException(`User already has a session`);
-            }
-        }
         const session = this.sessionRepository.create({
             name: dto.name,
             config: dto.config || {},

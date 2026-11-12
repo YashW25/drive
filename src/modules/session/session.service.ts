@@ -259,13 +259,6 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
       throw new ConflictException(`Session with name '${dto.name}' already exists`);
     }
 
-    if (ownerSupabaseId) {
-      const existingForUser = await this.sessionRepository.findOne({ where: { ownerSupabaseId } });
-      if (existingForUser) {
-        throw new ConflictException(`User already has a session`);
-      }
-    }
-
     const session = this.sessionRepository.create({
       name: dto.name,
       config: dto.config || {},

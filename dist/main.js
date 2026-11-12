@@ -141,25 +141,23 @@ async function bootstrap() {
     for (const signal of ['SIGTERM', 'SIGINT']) {
         process.on(signal, () => shutdownService.markShuttingDown());
     }
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseWss = supabaseUrl ? supabaseUrl.replace('https://', 'wss://').replace('http://', 'ws://') : '';
     app.use((0, helmet_1.default)({
         contentSecurityPolicy: {
             directives: {
                 defaultSrc: ["'self'"],
-                styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+                styleSrc: ["'self'", 'https://fonts.googleapis.com'],
                 scriptSrc: ["'self'"],
-                imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-                mediaSrc: ["'self'", 'data:', 'blob:', 'https:'],
-                connectSrc: ["'self'"],
+                imgSrc: ["'self'", 'data:', 'blob:', supabaseUrl].filter(Boolean),
+                mediaSrc: ["'self'", 'data:', 'blob:', supabaseUrl].filter(Boolean),
+                connectSrc: ["'self'", supabaseUrl, supabaseWss].filter(Boolean),
                 fontSrc: ["'self'", 'https://fonts.gstatic.com'],
                 objectSrc: ["'none'"],
-                upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+                upgradeInsecureRequests: null,
             },
         },
-        hsts: {
-            maxAge: 31536000,
-            includeSubDomains: true,
-            preload: true,
-        },
+        hsts: false,
         noSniff: true,
         referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
         crossOriginResourcePolicy: { policy: 'cross-origin' },
