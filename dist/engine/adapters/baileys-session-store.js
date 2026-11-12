@@ -104,8 +104,15 @@ class BaileysSessionStore {
         return (0, wa_id_1.toNeutralJid)(jid, id => this.resolvePhone(id));
     }
     toEngineJid(jid) {
-        const parsed = (0, wa_id_1.parseWaId)(jid);
-        return parsed.kind === 'user' ? `${parsed.userPart}@s.whatsapp.net` : jid;
+        if (!jid)
+            return jid;
+        const clean = jid.trim();
+        if (!clean.includes('@')) {
+            const digits = clean.replace(/\D/g, '');
+            return digits ? `${digits}@s.whatsapp.net` : clean;
+        }
+        const parsed = (0, wa_id_1.parseWaId)(clean);
+        return parsed.kind === 'user' ? `${parsed.userPart}@s.whatsapp.net` : clean;
     }
     toNeutralContact(c) {
         const number = c.phoneNumber ? (0, wa_id_1.userPart)(c.phoneNumber) : c.id.endsWith('@s.whatsapp.net') ? (0, wa_id_1.userPart)(c.id) : '';

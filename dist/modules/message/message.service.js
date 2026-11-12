@@ -434,8 +434,8 @@ let MessageService = class MessageService {
             return;
         try {
             await engine.sendChatState(chatId, 'typing');
-            const maxMs = Number(process.env.SIMULATE_TYPING_MAX_MS) || 5000;
-            const planned = Math.min(maxMs, 500 + text.length * 45);
+            const maxMs = Number(process.env.SIMULATE_TYPING_MAX_MS) || 6000;
+            const planned = Math.min(maxMs, 1500 + text.length * 45);
             const jittered = Math.round(planned * (0.85 + Math.random() * 0.3));
             await new Promise(resolve => setTimeout(resolve, jittered));
         }

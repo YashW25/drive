@@ -102,6 +102,17 @@ class BaileysAdapter {
     connecting = false;
     reconnectAttempts = 0;
     reconnectTimer;
+    static MAX_RECENT_MESSAGES = 2000;
+    recentMessages = new Map();
+    rememberMessage(id, message) {
+        if (this.recentMessages.size >= BaileysAdapter.MAX_RECENT_MESSAGES) {
+            const oldest = this.recentMessages.keys().next().value;
+            if (oldest) {
+                this.recentMessages.delete(oldest);
+            }
+        }
+        this.recentMessages.set(id, message);
+    }
     lib;
     async loadLib() {
         return (this.lib ??= await import('@whiskeysockets/baileys'));
@@ -176,6 +187,27 @@ class BaileysAdapter {
             printQRInTerminal: false,
             shouldSyncHistoryMessage: () => process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
             syncFullHistory: process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
+            getMessage: async (key) => {
+                if (!key?.id)
+                    return undefined;
+                const inMem = this.recentMessages.get(key.id);
+                if (inMem)
+                    return inMem;
+                try {
+                    const stored = await this.config.messageStore?.getMessage(this.config.sessionId, key.id);
+                    if (stored?.message) {
+                        this.rememberMessage(key.id, stored.message);
+                        return stored.message;
+                    }
+                }
+                catch (err) {
+                    this.logger.debug('getMessage lookup error', {
+                        id: key.id,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                }
+                return undefined;
+            },
             logger: createBaileysLogger(),
         });
         this.sock = sock;
@@ -366,8 +398,12 @@ class BaileysAdapter {
     }
     async sendTextMessage(chatId, text) {
         this.ensureReady();
-        const sent = await this.sock.sendMessage(chatId, { text });
+        const targetJid = this.sessionStore.toEngineJid(chatId);
+        const sent = await this.sock.sendMessage(targetJid, { text });
         if (sent) {
+            if (sent.key?.id && sent.message) {
+                this.rememberMessage(sent.key.id, sent.message);
+            }
             void this.config.messageStore?.put(this.config.sessionId, sent).catch(err => this.logger.warn('Failed to persist sent message to store', {
                 error: err instanceof Error ? err.message : String(err),
             }));
@@ -389,7 +425,8 @@ class BaileysAdapter {
     async sendChatState(chatId, state) {
         this.ensureReady();
         const presence = state === 'typing' ? 'composing' : state === 'recording' ? 'recording' : 'paused';
-        await this.sock.sendPresenceUpdate(presence, chatId);
+        const targetJid = this.sessionStore.toEngineJid(chatId);
+        await this.sock.sendPresenceUpdate(presence, targetJid);
     }
     async sendImageMessage(chatId, media) {
         this.ensureReady();
@@ -451,7 +488,8 @@ class BaileysAdapter {
     async reactToMessage(chatId, messageId, emoji) {
         this.ensureReady();
         const target = await this.requireStored(messageId);
-        await this.sock.sendMessage(chatId, { react: { text: emoji, key: target.key } });
+        const targetJid = this.sessionStore.toEngineJid(chatId);
+        await this.sock.sendMessage(targetJid, { react: { text: emoji, key: target.key } });
     }
     async deleteMessage(chatId, messageId, forEveryone = true) {
         this.ensureReady();
@@ -459,7 +497,8 @@ class BaileysAdapter {
             throw new engine_not_supported_error_1.EngineNotSupportedError('deleteMessage (delete-for-me)');
         }
         const target = await this.requireStored(messageId);
-        await this.sock.sendMessage(chatId, { delete: target.key });
+        const targetJid = this.sessionStore.toEngineJid(chatId);
+        await this.sock.sendMessage(targetJid, { delete: target.key });
     }
     async getGroups() {
         this.ensureReady();
@@ -665,6 +704,9 @@ class BaileysAdapter {
         for (const msg of event.messages) {
             if (!msg.message || !msg.key?.remoteJid) {
                 continue;
+            }
+            if (msg.key?.id) {
+                this.rememberMessage(msg.key.id, msg.message);
             }
             void this.inboundLimiter.run(() => this.processInboundMessage(msg));
         }
@@ -981,10 +1023,14 @@ class BaileysAdapter {
         ].join('\n');
     }
     async sendContent(chatId, content, options) {
+        const targetJid = this.sessionStore.toEngineJid(chatId);
         const sent = options
-            ? await this.sock.sendMessage(chatId, content, options)
-            : await this.sock.sendMessage(chatId, content);
+            ? await this.sock.sendMessage(targetJid, content, options)
+            : await this.sock.sendMessage(targetJid, content);
         if (sent) {
+            if (sent.key?.id && sent.message) {
+                this.rememberMessage(sent.key.id, sent.message);
+            }
             void this.config.messageStore?.put(this.config.sessionId, sent).catch(err => this.logger.warn('Failed to persist sent message to store', {
                 error: err instanceof Error ? err.message : String(err),
             }));

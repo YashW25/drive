@@ -169,8 +169,14 @@ export class BaileysSessionStore {
    * dialect, so pass them through unchanged.
    */
   toEngineJid(jid: string): string {
-    const parsed = parseWaId(jid);
-    return parsed.kind === 'user' ? `${parsed.userPart}@s.whatsapp.net` : jid;
+    if (!jid) return jid;
+    const clean = jid.trim();
+    if (!clean.includes('@')) {
+      const digits = clean.replace(/\D/g, '');
+      return digits ? `${digits}@s.whatsapp.net` : clean;
+    }
+    const parsed = parseWaId(clean);
+    return parsed.kind === 'user' ? `${parsed.userPart}@s.whatsapp.net` : clean;
   }
 
   private toNeutralContact(c: BaileysContactWithPhone): Contact {

@@ -77,8 +77,9 @@ let BulkMessageService = BulkMessageService_1 = class BulkMessageService {
         if (existing) {
             throw new common_1.BadRequestException(`Batch ID '${batchId}' already exists`);
         }
+        const defaultDelay = Number(process.env.BULK_MESSAGE_DELAY_MS) || 5000;
         const options = {
-            delayBetweenMessages: dto.options?.delayBetweenMessages ?? 3000,
+            delayBetweenMessages: dto.options?.delayBetweenMessages ?? defaultDelay,
             randomizeDelay: dto.options?.randomizeDelay ?? true,
             stopOnError: dto.options?.stopOnError ?? false,
         };
@@ -304,7 +305,7 @@ let BulkMessageService = BulkMessageService_1 = class BulkMessageService {
     calculateDelay(options) {
         let delay = options.delayBetweenMessages;
         if (options.randomizeDelay) {
-            delay += Math.random() * 2000;
+            delay += 1000 + Math.floor(Math.random() * 3000);
         }
         return delay;
     }

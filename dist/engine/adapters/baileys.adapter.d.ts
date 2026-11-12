@@ -17,6 +17,9 @@ export declare class BaileysAdapter implements IWhatsAppEngine {
     private connecting;
     private reconnectAttempts;
     private reconnectTimer?;
+    private static readonly MAX_RECENT_MESSAGES;
+    private readonly recentMessages;
+    private rememberMessage;
     private lib?;
     private loadLib;
     constructor(config: BaileysAdapterConfig);

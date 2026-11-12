@@ -125,6 +125,19 @@ export class BaileysAdapter implements IWhatsAppEngine {
   private connecting = false;
   private reconnectAttempts = 0;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private static readonly MAX_RECENT_MESSAGES = 2000;
+  private readonly recentMessages = new Map<string, BaileysLib.proto.IMessage>();
+
+  private rememberMessage(id: string, message: BaileysLib.proto.IMessage): void {
+    if (this.recentMessages.size >= BaileysAdapter.MAX_RECENT_MESSAGES) {
+      const oldest = this.recentMessages.keys().next().value;
+      if (oldest) {
+        this.recentMessages.delete(oldest);
+      }
+    }
+    this.recentMessages.set(id, message);
+  }
+
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first connect, not at boot). */
   private lib?: typeof BaileysLib;
 
@@ -219,6 +232,24 @@ export class BaileysAdapter implements IWhatsAppEngine {
       // (no contacts, chats, recent history). This drastically reduces RAM usage.
       shouldSyncHistoryMessage: () => process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
       syncFullHistory: process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
+      getMessage: async (key: BaileysLib.proto.IMessageKey) => {
+        if (!key?.id) return undefined;
+        const inMem = this.recentMessages.get(key.id);
+        if (inMem) return inMem;
+        try {
+          const stored = await this.config.messageStore?.getMessage(this.config.sessionId, key.id);
+          if (stored?.message) {
+            this.rememberMessage(key.id, stored.message);
+            return stored.message;
+          }
+        } catch (err) {
+          this.logger.debug('getMessage lookup error', {
+            id: key.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return undefined;
+      },
       // BaileysLogger matches ILogger exactly; cast needed because the module resolves
       // the type through a deep import path that TypeScript does not auto-unify here.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
@@ -464,8 +495,12 @@ export class BaileysAdapter implements IWhatsAppEngine {
 
   async sendTextMessage(chatId: string, text: string): Promise<MessageResult> {
     this.ensureReady();
-    const sent = await this.sock!.sendMessage(chatId, { text });
+    const targetJid = this.sessionStore.toEngineJid(chatId);
+    const sent = await this.sock!.sendMessage(targetJid, { text });
     if (sent) {
+      if (sent.key?.id && sent.message) {
+        this.rememberMessage(sent.key.id, sent.message);
+      }
       void this.config.messageStore?.put(this.config.sessionId, sent).catch(err =>
         this.logger.warn('Failed to persist sent message to store', {
           error: err instanceof Error ? err.message : String(err),
@@ -495,7 +530,8 @@ export class BaileysAdapter implements IWhatsAppEngine {
   async sendChatState(chatId: string, state: ChatState): Promise<void> {
     this.ensureReady();
     const presence = state === 'typing' ? 'composing' : state === 'recording' ? 'recording' : 'paused';
-    await this.sock!.sendPresenceUpdate(presence, chatId);
+    const targetJid = this.sessionStore.toEngineJid(chatId);
+    await this.sock!.sendPresenceUpdate(presence, targetJid);
   }
 
   async sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
@@ -567,7 +603,8 @@ export class BaileysAdapter implements IWhatsAppEngine {
   async reactToMessage(chatId: string, messageId: string, emoji: string): Promise<void> {
     this.ensureReady();
     const target = await this.requireStored(messageId);
-    await this.sock!.sendMessage(chatId, { react: { text: emoji, key: target.key } });
+    const targetJid = this.sessionStore.toEngineJid(chatId);
+    await this.sock!.sendMessage(targetJid, { react: { text: emoji, key: target.key } });
   }
 
   async deleteMessage(chatId: string, messageId: string, forEveryone = true): Promise<void> {
@@ -577,7 +614,8 @@ export class BaileysAdapter implements IWhatsAppEngine {
       throw new EngineNotSupportedError('deleteMessage (delete-for-me)');
     }
     const target = await this.requireStored(messageId);
-    await this.sock!.sendMessage(chatId, { delete: target.key });
+    const targetJid = this.sessionStore.toEngineJid(chatId);
+    await this.sock!.sendMessage(targetJid, { delete: target.key });
   }
 
   // ----- Groups -----
@@ -833,6 +871,9 @@ export class BaileysAdapter implements IWhatsAppEngine {
     for (const msg of event.messages) {
       if (!msg.message || !msg.key?.remoteJid) {
         continue; // protocol/empty messages carry no neutral content
+      }
+      if (msg.key?.id) {
+        this.rememberMessage(msg.key.id, msg.message);
       }
       // Throttle through the limiter so a burst of media messages can't run unbounded parallel
       // downloads (each a full decrypted buffer in heap). Ordering stays correct — the message store
@@ -1269,10 +1310,14 @@ export class BaileysAdapter implements IWhatsAppEngine {
     content: AnyMessageContent,
     options?: MiscMessageGenerationOptions,
   ): Promise<MessageResult> {
+    const targetJid = this.sessionStore.toEngineJid(chatId);
     const sent = options
-      ? await this.sock!.sendMessage(chatId, content, options)
-      : await this.sock!.sendMessage(chatId, content);
+      ? await this.sock!.sendMessage(targetJid, content, options)
+      : await this.sock!.sendMessage(targetJid, content);
     if (sent) {
+      if (sent.key?.id && sent.message) {
+        this.rememberMessage(sent.key.id, sent.message);
+      }
       void this.config.messageStore?.put(this.config.sessionId, sent).catch(err =>
         this.logger.warn('Failed to persist sent message to store', {
           error: err instanceof Error ? err.message : String(err),
