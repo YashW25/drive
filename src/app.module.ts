@@ -30,6 +30,7 @@ import { StatsModule } from './modules/stats/stats.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { StatusModule } from './modules/status/status.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { AiModule } from './modules/ai/ai.module';
 import { HooksModule } from './core/hooks';
 import { PluginsModule } from './core/plugins';
 import { PluginsApiModule } from './modules/plugins/plugins.module';
@@ -132,6 +133,7 @@ if (dashboardServingEnabled && dashboardBuildPresent) {
             __dirname + '/modules/webhook/**/*.entity{.ts,.js}',
             __dirname + '/modules/message/**/*.entity{.ts,.js}',
             __dirname + '/modules/template/**/*.entity{.ts,.js}',
+            __dirname + '/modules/ai/**/*.entity{.ts,.js}',
             __dirname + '/engine/**/*.entity{.ts,.js}',
           ],
           migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
@@ -227,6 +229,7 @@ if (dashboardServingEnabled && dashboardBuildPresent) {
     MessageModule,
     TemplateModule,
     WebhookModule,
+    AiModule,
     HealthModule,
     HeartbeatModule,
     SettingsModule,

@@ -8,6 +8,8 @@ import {
   infraApi,
   pluginsApi,
   statsApi,
+  aiApi,
+  type CreateAiRuleInput,
   type Webhook,
   type WebhookFilters,
   type TemplatePayload,
@@ -32,6 +34,7 @@ export const queryKeys = {
   currentEngine: ['engines', 'current'] as const,
   statsOverview: ['stats', 'overview'] as const,
   statsMessages: (period: string) => ['stats', 'messages', period] as const,
+  aiRules: ['ai', 'rules'] as const,
 };
 
 // ── Session Queries ───────────────────────────────────────────────────
@@ -289,5 +292,40 @@ export function useStatsMessagesQuery(period: StatsPeriod) {
     queryFn: () => statsApi.getMessages(period),
     staleTime: 30_000,
     retry: false,
+  });
+}
+
+// ── AI Rules Queries ──────────────────────────────────────────────────
+
+export function useAiRulesQuery() {
+  return useQuery({
+    queryKey: queryKeys.aiRules,
+    queryFn: aiApi.getRules,
+    staleTime: 15_000,
+  });
+}
+
+export function useCreateAiRuleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: aiApi.createRule,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.aiRules }),
+  });
+}
+
+export function useUpdateAiRuleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreateAiRuleInput> }) =>
+      aiApi.updateRule(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.aiRules }),
+  });
+}
+
+export function useDeleteAiRuleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => aiApi.deleteRule(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.aiRules }),
   });
 }

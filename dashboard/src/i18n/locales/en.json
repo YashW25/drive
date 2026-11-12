@@ -68,6 +68,7 @@
     "dashboard": "Dashboard",
     "sessions": "Sessions",
     "chats": "Chats",
+    "ai": "AI Assistant",
     "webhooks": "Webhooks",
     "templates": "Templates",
     "apiKeys": "API Keys",
@@ -718,6 +719,38 @@
       "selectSession": "Select a session…",
       "saveOverride": "Save override",
       "clearOverride": "Clear override"
+    }
+  },
+  "ai": {
+    "title": "AI Assistant & Auto-Reply",
+    "subtitle": "Intelligent automated WhatsApp chat replies powered by Innovara AI Core",
+    "createRule": "Create AI Rule",
+    "editRule": "Edit Rule",
+    "noRules": "No AI auto-reply rules configured yet. Create one to get started.",
+    "stats": {
+      "totalRules": "Total Rules",
+      "activeRules": "Active Rules",
+      "totalReplies": "Total AI Replies",
+      "engineStatus": "AI Engine Status"
+    },
+    "triggerTypes": {
+      "all": "All Senders",
+      "specific": "Specific Numbers",
+      "unknown_only": "Non-Contacts Only",
+      "custom_keyword": "Custom Keywords"
+    },
+    "sessions": {
+      "all": "All Active Sessions (*)"
+    },
+    "tester": {
+      "title": "Live AI Playground",
+      "subtitle": "Test responses directly against ai.innovaradynamics.in",
+      "promptPlaceholder": "Type a test message (e.g. Hello, what services do you provide?)...",
+      "testButton": "Send Test Query",
+      "testing": "Generating Response...",
+      "responseLabel": "AI Response",
+      "latency": "Latency",
+      "tokens": "Tokens"
     }
   }
 }

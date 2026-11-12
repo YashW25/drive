@@ -16,6 +16,7 @@ const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login }
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const Sessions = lazy(() => import('./pages/Sessions').then(m => ({ default: m.Sessions })));
 const Chats = lazy(() => import('./pages/Chats').then(m => ({ default: m.Chats })));
+const AiAutoReply = lazy(() => import('./pages/AiAutoReply').then(m => ({ default: m.AiAutoReply })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })));
 const Logs = lazy(() => import('./pages/Logs').then(m => ({ default: m.Logs })));
@@ -156,6 +157,7 @@ function AppContent() {
             <Route index element={<Dashboard />} />
             <Route path="sessions" element={<Sessions />} />
             <Route path="chats" element={<Chats />} />
+            <Route path="ai" element={<AiAutoReply />} />
             <Route path="webhooks" element={<Webhooks />} />
             <Route path="templates" element={<Templates />} />
             {role === 'admin' && <Route path="api-keys" element={<ApiKeys />} />}

@@ -794,3 +794,82 @@ export const statsApi = {
   getOverview: () => request<OverviewStats>('/stats/overview'),
   getMessages: (period: StatsPeriod) => request<MessageStats>(`/stats/messages?period=${period}`),
 };
+
+// =============================================================================
+// AI Auto-Reply API
+// =============================================================================
+
+export type AiTriggerType = 'all' | 'specific' | 'unknown_only' | 'custom_keyword';
+
+export interface AiAutoReplyRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  sessionId: string;
+  sessionName: string;
+  triggerType: AiTriggerType;
+  specificNumbers: string[];
+  customKeywords: string[];
+  aiEndpoint: string;
+  aiApiKey: string;
+  systemPrompt: string | null;
+  cooldownSeconds: number;
+  maxTokens: number;
+  totalRepliesSent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAiRuleInput {
+  name: string;
+  enabled?: boolean;
+  sessionId?: string;
+  sessionName?: string;
+  triggerType?: AiTriggerType;
+  specificNumbers?: string[];
+  customKeywords?: string[];
+  aiEndpoint?: string;
+  aiApiKey?: string;
+  systemPrompt?: string;
+  cooldownSeconds?: number;
+  maxTokens?: number;
+}
+
+export interface TestAiInput {
+  endpoint?: string;
+  apiKey?: string;
+  message: string;
+  systemPrompt?: string;
+}
+
+export interface TestAiResult {
+  success: boolean;
+  response?: string;
+  error?: string;
+  durationMs: number;
+}
+
+export const aiApi = {
+  getRules: () => request<AiAutoReplyRule[]>('/ai/rules'),
+  getRule: (id: string) => request<AiAutoReplyRule>(`/ai/rules/${id}`),
+  createRule: (data: CreateAiRuleInput) =>
+    request<AiAutoReplyRule>('/ai/rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateRule: (id: string, data: Partial<CreateAiRuleInput>) =>
+    request<AiAutoReplyRule>(`/ai/rules/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteRule: (id: string) =>
+    request<void>(`/ai/rules/${id}`, {
+      method: 'DELETE',
+    }),
+  testAi: (data: TestAiInput) =>
+    request<TestAiResult>('/ai/test', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
