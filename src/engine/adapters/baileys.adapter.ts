@@ -228,9 +228,9 @@ export class BaileysAdapter implements IWhatsAppEngine {
       version,
       browser: BAILEYS_BROWSER,
       printQRInTerminal: false,
-      // Enable the initial sync conditionally. Returning false disables ALL history + app-state sync
-      // (no contacts, chats, recent history). This drastically reduces RAM usage.
-      shouldSyncHistoryMessage: () => process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
+      // Enable the initial sync. Returning true allows Baileys to receive chats, contacts,
+      // unread counts, and recent previous day history instead of dropping them.
+      shouldSyncHistoryMessage: () => true,
       syncFullHistory: process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
       getMessage: async (key: BaileysLib.proto.IMessageKey) => {
         if (!key?.id) return undefined;
@@ -864,7 +864,11 @@ export class BaileysAdapter implements IWhatsAppEngine {
   // ----- Helpers -----
 
   private handleMessagesUpsert(event: { messages: WAMessage[]; type: string }): void {
-    // Only live messages ('notify'); 'append' is history sync, which this storeless slice skips.
+    if (event.type === 'append') {
+      // Append carries synced or offline messages; capture into session store and DB
+      this.captureHistoryMessages(event.messages ?? []);
+      return;
+    }
     if (event.type !== 'notify') {
       return;
     }

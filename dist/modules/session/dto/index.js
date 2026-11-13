@@ -20,4 +20,5 @@ __exportStar(require("./mark-chat-read.dto"), exports);
 __exportStar(require("./delete-chat.dto"), exports);
 __exportStar(require("./send-chat-state.dto"), exports);
 __exportStar(require("./request-pairing-code.dto"), exports);
+__exportStar(require("./refresh-session.dto"), exports);
 //# sourceMappingURL=index.js.map

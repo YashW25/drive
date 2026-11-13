@@ -9,6 +9,14 @@ import { IWhatsAppEngine, ChatSummary, ChatState } from '../../engine/interfaces
 import { EventsGateway } from '../events/events.gateway';
 import { WebhookService } from '../webhook/webhook.service';
 import { HookManager } from '../../core/hooks';
+export interface AutoRefreshConfig {
+    enabled: boolean;
+    intervalHours: number;
+    mode: 'sessions' | 'service';
+    lastRefreshAt: string | null;
+    nextRefreshAt: string | null;
+    totalRefreshesDone: number;
+}
 export declare const ACK_RECONCILE_DELAY_MS = 750;
 export declare function resolveReconnectConfig(config: {
     maxReconnectAttempts?: unknown;
@@ -36,6 +44,9 @@ export declare class SessionService implements OnModuleDestroy, OnModuleInit, On
     private stoppingSessions;
     private initializingSessions;
     private reactionChains;
+    private refreshConfig;
+    private autoRefreshTimer;
+    private readonly configFilePath;
     constructor(sessionRepository: Repository<Session>, messageRepository: Repository<Message>, dataSource: DataSource, engineFactory: EngineFactory, eventsGateway: EventsGateway, webhookService: WebhookService, hookManager: HookManager);
     onModuleInit(): Promise<void>;
     onApplicationBootstrap(): Promise<void>;
@@ -49,6 +60,19 @@ export declare class SessionService implements OnModuleDestroy, OnModuleInit, On
     findByName(name: string): Promise<Session>;
     delete(id: string): Promise<void>;
     start(id: string): Promise<Session>;
+    restart(id: string): Promise<Session>;
+    refreshAll(mode?: 'sessions' | 'service'): Promise<{
+        message: string;
+        mode: string;
+        total: number;
+        refreshed: string[];
+        timestamp: string;
+    }>;
+    getRefreshConfig(): AutoRefreshConfig;
+    updateRefreshConfig(update: Partial<AutoRefreshConfig>): AutoRefreshConfig;
+    private loadRefreshConfig;
+    private saveRefreshConfig;
+    private scheduleAutoRefresh;
     private isLiveEngine;
     private persistHistoryMessages;
     private initializeEngine;

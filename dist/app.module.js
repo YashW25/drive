@@ -75,6 +75,7 @@ const stats_module_1 = require("./modules/stats/stats.module");
 const metrics_module_1 = require("./modules/metrics/metrics.module");
 const status_module_1 = require("./modules/status/status.module");
 const catalog_module_1 = require("./modules/catalog/catalog.module");
+const ai_module_1 = require("./modules/ai/ai.module");
 const hooks_1 = require("./core/hooks");
 const plugins_1 = require("./core/plugins");
 const plugins_module_1 = require("./modules/plugins/plugins.module");
@@ -147,6 +148,7 @@ exports.AppModule = AppModule = __decorate([
                             __dirname + '/modules/webhook/**/*.entity{.ts,.js}',
                             __dirname + '/modules/message/**/*.entity{.ts,.js}',
                             __dirname + '/modules/template/**/*.entity{.ts,.js}',
+                            __dirname + '/modules/ai/**/*.entity{.ts,.js}',
                             __dirname + '/engine/**/*.entity{.ts,.js}',
                         ],
                         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
@@ -227,6 +229,7 @@ exports.AppModule = AppModule = __decorate([
             message_module_1.MessageModule,
             template_module_1.TemplateModule,
             webhook_module_1.WebhookModule,
+            ai_module_1.AiModule,
             health_module_1.HealthModule,
             heartbeat_module_1.HeartbeatModule,
             settings_module_1.SettingsModule,

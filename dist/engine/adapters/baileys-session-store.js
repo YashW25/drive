@@ -65,7 +65,12 @@ class BaileysSessionStore {
             return;
         }
         const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? '';
-        this.lastMessages.set(chatId, { key: msg.key, timestamp, text });
+        this.lastMessages.set(chatId, {
+            key: msg.key,
+            timestamp,
+            text,
+            fromMe: msg.key.fromMe === true,
+        });
     }
     listContacts() {
         return [...this.contacts.values()].map(c => this.toNeutralContact(c));
@@ -79,7 +84,7 @@ class BaileysSessionStore {
     }
     lastMessage(chatId) {
         const m = this.lastMessages.get(chatId) ?? this.lastMessages.get(this.toEngineJid(chatId));
-        return m ? { key: m.key, timestamp: m.timestamp } : null;
+        return m ? { key: m.key, timestamp: m.timestamp, text: m.text, fromMe: m.fromMe } : null;
     }
     resolvePhone(id) {
         const parsed = (0, wa_id_1.parseWaId)(id);
@@ -135,6 +140,7 @@ class BaileysSessionStore {
             unreadCount: c.unreadCount ?? 0,
             timestamp: last?.timestamp ?? this.toUnixSeconds(c.conversationTimestamp),
             lastMessage: last?.text,
+            lastMessageFromMe: last?.fromMe,
         };
     }
     resolveContactName(id) {

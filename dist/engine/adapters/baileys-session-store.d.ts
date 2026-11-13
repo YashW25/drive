@@ -27,6 +27,8 @@ export declare class BaileysSessionStore {
     lastMessage(chatId: string): {
         key: WAMessageKey;
         timestamp: number;
+        text?: string;
+        fromMe?: boolean;
     } | null;
     resolvePhone(id: string): string | null;
     toNeutralJid(jid: string): string;

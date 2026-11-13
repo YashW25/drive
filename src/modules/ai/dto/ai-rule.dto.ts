@@ -157,3 +157,20 @@ export class TestAiDto {
   @IsString()
   systemPrompt?: string;
 }
+
+export class ScanUnrepliedDto {
+  @ApiPropertyOptional({ description: 'Specific session ID to scan, or * for all' })
+  @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  @ApiPropertyOptional({ description: 'Max age of chats to scan in hours', default: 48 })
+  @IsOptional()
+  @IsNumber()
+  maxAgeHours?: number;
+
+  @ApiPropertyOptional({ description: 'Whether to only preview without sending replies', default: false })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
+}

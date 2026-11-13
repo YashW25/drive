@@ -1,10 +1,43 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
@@ -17,6 +50,8 @@ exports.SessionService = exports.ACK_RECONCILE_DELAY_MS = void 0;
 exports.resolveReconnectConfig = resolveReconnectConfig;
 exports.clampReconnectDelay = clampReconnectDelay;
 const common_1 = require("@nestjs/common");
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const session_entity_1 = require("./entities/session.entity");
@@ -65,6 +100,16 @@ let SessionService = class SessionService {
     stoppingSessions = new Set();
     initializingSessions = new Set();
     reactionChains = new Map();
+    refreshConfig = {
+        enabled: true,
+        intervalHours: 12,
+        mode: 'sessions',
+        lastRefreshAt: null,
+        nextRefreshAt: null,
+        totalRefreshesDone: 0,
+    };
+    autoRefreshTimer = null;
+    configFilePath = path.join(process.cwd(), 'data', 'auto-refresh.json');
     constructor(sessionRepository, messageRepository, dataSource, engineFactory, eventsGateway, webhookService, hookManager) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
@@ -90,6 +135,8 @@ let SessionService = class SessionService {
         }
     }
     async onApplicationBootstrap() {
+        this.loadRefreshConfig();
+        this.scheduleAutoRefresh();
         if (process.env.AUTO_START_SESSIONS !== 'true')
             return;
         const sessions = await this.sessionRepository.find({
@@ -123,6 +170,10 @@ let SessionService = class SessionService {
         }
     }
     async onModuleDestroy() {
+        if (this.autoRefreshTimer) {
+            clearTimeout(this.autoRefreshTimer);
+            this.autoRefreshTimer = null;
+        }
         for (const [, state] of this.reconnectStates) {
             if (state.timer) {
                 clearTimeout(state.timer);
@@ -289,6 +340,150 @@ let SessionService = class SessionService {
         }
         finally {
             this.initializingSessions.delete(id);
+        }
+    }
+    async restart(id) {
+        const session = await this.findOne(id);
+        this.logger.log(`Refreshing WhatsApp session: ${session.name} (${id})`, {
+            sessionId: id,
+            action: 'session_restart',
+        });
+        this.cancelReconnect(id);
+        const oldEngine = this.engines.get(id);
+        if (oldEngine) {
+            await this.teardownEngineSafely(id, oldEngine, e => e.destroy(), 'destroy');
+            this.engines.delete(id);
+        }
+        this.stoppingSessions.delete(id);
+        this.initializingSessions.delete(id);
+        await this.updateStatus(id, session_entity_1.SessionStatus.INITIALIZING);
+        const { maxAttempts, baseDelay } = resolveReconnectConfig(session.config);
+        this.reconnectStates.set(id, { attempts: 0, timer: null, maxAttempts, baseDelay });
+        await this.initializeEngine(id, session);
+        return this.findOne(id);
+    }
+    async refreshAll(mode = 'sessions') {
+        const allSessions = await this.sessionRepository.find();
+        const targetSessions = allSessions.filter(s => s.status === session_entity_1.SessionStatus.READY ||
+            s.status === session_entity_1.SessionStatus.AUTHENTICATING ||
+            s.status === session_entity_1.SessionStatus.INITIALIZING ||
+            s.status === session_entity_1.SessionStatus.QR_READY ||
+            (s.phone && s.status !== session_entity_1.SessionStatus.CREATED));
+        this.logger.log(`Executing WhatsApp refreshment for ${targetSessions.length} session(s) with mode '${mode}'`);
+        if (mode === 'service') {
+            this.logger.warn('Full service restart triggered. Container will reboot and automatically reconnect previous sessions.');
+            this.refreshConfig.lastRefreshAt = new Date().toISOString();
+            this.refreshConfig.totalRefreshesDone = (this.refreshConfig.totalRefreshesDone || 0) + 1;
+            this.saveRefreshConfig();
+            setTimeout(() => {
+                process.exit(0);
+            }, 1500);
+            return {
+                message: 'Full service restart initiated. Container will reboot and automatically restore all logged-in sessions.',
+                mode: 'service',
+                total: targetSessions.length,
+                refreshed: targetSessions.map(s => s.name),
+                timestamp: new Date().toISOString(),
+            };
+        }
+        const refreshed = [];
+        for (const session of targetSessions) {
+            try {
+                await this.restart(session.id);
+                refreshed.push(session.name);
+                await this.delay(1500);
+            }
+            catch (err) {
+                this.logger.error(`Error refreshing session ${session.name}:`, err instanceof Error ? err.message : String(err));
+            }
+        }
+        this.refreshConfig.lastRefreshAt = new Date().toISOString();
+        this.refreshConfig.totalRefreshesDone = (this.refreshConfig.totalRefreshesDone || 0) + 1;
+        this.saveRefreshConfig();
+        this.scheduleAutoRefresh();
+        return {
+            message: `Refreshed ${refreshed.length} active session(s) successfully without changing session IDs.`,
+            mode: 'sessions',
+            total: targetSessions.length,
+            refreshed,
+            timestamp: new Date().toISOString(),
+        };
+    }
+    getRefreshConfig() {
+        return { ...this.refreshConfig };
+    }
+    updateRefreshConfig(update) {
+        if (typeof update.enabled === 'boolean') {
+            this.refreshConfig.enabled = update.enabled;
+        }
+        if (typeof update.intervalHours === 'number' && update.intervalHours > 0) {
+            this.refreshConfig.intervalHours = Math.max(1, Math.min(168, update.intervalHours));
+        }
+        if (update.mode === 'sessions' || update.mode === 'service') {
+            this.refreshConfig.mode = update.mode;
+        }
+        this.saveRefreshConfig();
+        this.scheduleAutoRefresh();
+        this.logger.log(`Auto-refresh configuration updated: enabled=${this.refreshConfig.enabled}, interval=${this.refreshConfig.intervalHours}h, mode=${this.refreshConfig.mode}`);
+        return { ...this.refreshConfig };
+    }
+    loadRefreshConfig() {
+        try {
+            if (fs.existsSync(this.configFilePath)) {
+                const raw = fs.readFileSync(this.configFilePath, 'utf8');
+                const parsed = JSON.parse(raw);
+                this.refreshConfig = {
+                    enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : true,
+                    intervalHours: typeof parsed.intervalHours === 'number' && parsed.intervalHours > 0 ? parsed.intervalHours : 12,
+                    mode: parsed.mode === 'service' ? 'service' : 'sessions',
+                    lastRefreshAt: parsed.lastRefreshAt || null,
+                    nextRefreshAt: parsed.nextRefreshAt || null,
+                    totalRefreshesDone: typeof parsed.totalRefreshesDone === 'number' ? parsed.totalRefreshesDone : 0,
+                };
+            }
+            else {
+                this.saveRefreshConfig();
+            }
+        }
+        catch (err) {
+            this.logger.error('Failed to load auto-refresh configuration, using defaults', err instanceof Error ? err.message : String(err));
+        }
+    }
+    saveRefreshConfig() {
+        try {
+            const dir = path.dirname(this.configFilePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(this.configFilePath, JSON.stringify(this.refreshConfig, null, 2), 'utf8');
+        }
+        catch (err) {
+            this.logger.error('Failed to save auto-refresh configuration', err instanceof Error ? err.message : String(err));
+        }
+    }
+    scheduleAutoRefresh() {
+        if (this.autoRefreshTimer) {
+            clearTimeout(this.autoRefreshTimer);
+            this.autoRefreshTimer = null;
+        }
+        if (!this.refreshConfig.enabled || this.refreshConfig.intervalHours <= 0) {
+            this.refreshConfig.nextRefreshAt = null;
+            return;
+        }
+        const intervalMs = this.refreshConfig.intervalHours * 3600 * 1000;
+        this.refreshConfig.nextRefreshAt = new Date(Date.now() + intervalMs).toISOString();
+        this.logger.log(`[AutoRefresh] Scheduled next WhatsApp refreshment in ${this.refreshConfig.intervalHours} hour(s) at ${this.refreshConfig.nextRefreshAt}`);
+        this.autoRefreshTimer = setTimeout(async () => {
+            this.logger.log(`[AutoRefresh] Interval triggered (${this.refreshConfig.intervalHours}h). Executing scheduled WhatsApp refreshment...`);
+            try {
+                await this.refreshAll(this.refreshConfig.mode);
+            }
+            catch (err) {
+                this.logger.error('[AutoRefresh] Scheduled refreshment encountered an error:', err instanceof Error ? err.message : String(err));
+            }
+        }, intervalMs);
+        if (this.autoRefreshTimer && typeof this.autoRefreshTimer.unref === 'function') {
+            this.autoRefreshTimer.unref();
         }
     }
     isLiveEngine(id, engine) {

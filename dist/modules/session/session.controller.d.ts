@@ -1,5 +1,5 @@
 import { SessionService } from './session.service';
-import { CreateSessionDto, SessionResponseDto, QRCodeResponseDto, MarkChatReadDto, DeleteChatDto, SendChatStateDto, RequestPairingCodeDto, PairingCodeResponseDto } from './dto';
+import { CreateSessionDto, SessionResponseDto, QRCodeResponseDto, MarkChatReadDto, DeleteChatDto, SendChatStateDto, RequestPairingCodeDto, PairingCodeResponseDto, RefreshAllSessionsDto, UpdateRefreshConfigDto, AutoRefreshConfigDto } from './dto';
 import { Session } from './entities/session.entity';
 import { ChatSummary } from '../../engine/interfaces/whatsapp-engine.interface';
 import { AuditService } from '../audit/audit.service';
@@ -11,9 +11,13 @@ export declare class SessionController {
     private transformSession;
     create(dto: CreateSessionDto, user?: any): Promise<Session>;
     findAll(apiKey?: ApiKey, user?: any): Promise<SessionResponseDto[]>;
+    refreshAll(dto?: RefreshAllSessionsDto): Promise<any>;
+    getRefreshConfig(): AutoRefreshConfigDto;
+    updateRefreshConfig(dto: UpdateRefreshConfigDto): AutoRefreshConfigDto;
     findOne(id: string): Promise<SessionResponseDto>;
     delete(id: string): Promise<void>;
     start(id: string): Promise<SessionResponseDto>;
+    restart(id: string): Promise<SessionResponseDto>;
     stop(id: string): Promise<SessionResponseDto>;
     forceKill(id: string): Promise<SessionResponseDto>;
     getQRCode(id: string): Promise<QRCodeResponseDto>;

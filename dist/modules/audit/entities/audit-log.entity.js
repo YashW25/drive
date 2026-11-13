@@ -26,6 +26,8 @@ var AuditAction;
     AuditAction["SESSION_QR_GENERATED"] = "session_qr_generated";
     AuditAction["SESSION_CONNECTED"] = "session_connected";
     AuditAction["SESSION_DISCONNECTED"] = "session_disconnected";
+    AuditAction["SESSION_RESTARTED"] = "session_restarted";
+    AuditAction["SESSIONS_REFRESHED"] = "sessions_refreshed";
     AuditAction["MESSAGE_SENT"] = "message_sent";
     AuditAction["MESSAGE_FAILED"] = "message_failed";
     AuditAction["WEBHOOK_CREATED"] = "webhook_created";

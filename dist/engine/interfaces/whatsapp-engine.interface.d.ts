@@ -206,6 +206,7 @@ export interface ChatSummary {
     unreadCount: number;
     timestamp: number;
     lastMessage?: string;
+    lastMessageFromMe?: boolean;
 }
 export type ChatState = 'typing' | 'recording' | 'paused';
 export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';

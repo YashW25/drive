@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Bot,
   Sparkles,
@@ -14,6 +14,10 @@ import {
   Clock,
   Sliders,
   X,
+  Inbox,
+  RefreshCw,
+  CheckCircle2,
+  MessageCircle,
 } from 'lucide-react';
 import {
   aiApi,
@@ -21,6 +25,8 @@ import {
   type AiTriggerType,
   type CreateAiRuleInput,
   type TestAiResult,
+  type UnrepliedChatInfo,
+  type ScanAndReplyResult,
 } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
@@ -71,6 +77,50 @@ export function AiAutoReply() {
   const [testSystemPrompt, setTestSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [testingAi, setTestingAi] = useState(false);
   const [testResult, setTestResult] = useState<TestAiResult | null>(null);
+
+  // Unreplied chats state
+  const [unrepliedChats, setUnrepliedChats] = useState<UnrepliedChatInfo[]>([]);
+  const [loadingUnreplied, setLoadingUnreplied] = useState(false);
+  const [scanningAndReplying, setScanningAndReplying] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanAndReplyResult | null>(null);
+  const [selectedScanSession, setSelectedScanSession] = useState<string>('*');
+
+  const fetchUnrepliedChats = useCallback(async () => {
+    setLoadingUnreplied(true);
+    try {
+      const data = await aiApi.getUnrepliedChats(
+        selectedScanSession === '*' ? undefined : selectedScanSession,
+        48,
+      );
+      setUnrepliedChats(data);
+    } catch (err) {
+      console.error('Failed to load unreplied chats:', err);
+    } finally {
+      setLoadingUnreplied(false);
+    }
+  }, [selectedScanSession]);
+
+  useEffect(() => {
+    void fetchUnrepliedChats();
+  }, [fetchUnrepliedChats]);
+
+  const handleScanAndReply = async (dryRun = false) => {
+    setScanningAndReplying(true);
+    setScanResult(null);
+    try {
+      const res = await aiApi.scanAndReply({
+        sessionId: selectedScanSession === '*' ? undefined : selectedScanSession,
+        maxAgeHours: 48,
+        dryRun,
+      });
+      setScanResult(res);
+      await fetchUnrepliedChats();
+    } catch (err: any) {
+      console.error('Failed to scan and reply unreplied chats:', err);
+    } finally {
+      setScanningAndReplying(false);
+    }
+  };
 
   // Stats calculation
   const totalRules = rules.length;
@@ -255,6 +305,121 @@ export function AiAutoReply() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Unread & Previous Day Chats Assistant */}
+      <div className="unreplied-banner-card">
+        <div className="unreplied-banner-header">
+          <div className="unreplied-header-title">
+            <div className="unreplied-icon-box">
+              <Inbox size={22} />
+            </div>
+            <div>
+              <div className="title-row">
+                <h3>Unread & Previous Day Chats Assistant</h3>
+                <span className={`status-pill ${unrepliedChats.length > 0 ? 'warning' : 'success'}`}>
+                  {unrepliedChats.length} Unreplied Chat{unrepliedChats.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <p>
+                Automatically imports chats from previous days, detects messages awaiting your response, and auto-replies with AI.
+              </p>
+            </div>
+          </div>
+
+          <div className="unreplied-header-actions">
+            <select
+              className="session-filter-select"
+              value={selectedScanSession}
+              onChange={(e) => setSelectedScanSession(e.target.value)}
+            >
+              <option value="*">All Active Sessions</option>
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.phone || 'Ready'})
+                </option>
+              ))}
+            </select>
+
+            <button
+              className="btn-secondary"
+              onClick={fetchUnrepliedChats}
+              disabled={loadingUnreplied}
+              title="Refresh unreplied chats"
+            >
+              <RefreshCw size={16} className={loadingUnreplied ? 'spin' : ''} />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              className="btn-primary highlight-btn"
+              onClick={() => handleScanAndReply(false)}
+              disabled={scanningAndReplying || unrepliedChats.length === 0}
+            >
+              {scanningAndReplying ? (
+                <>
+                  <Loader2 size={16} className="spin" />
+                  <span>Auto-Replying...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  <span>Auto-Reply Unreplied Now ({unrepliedChats.length})</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {scanResult && (
+          <div className="scan-result-alert">
+            <CheckCircle2 size={18} className="text-green" />
+            <div className="result-text">
+              <strong>Scan Complete:</strong> Found {scanResult.unrepliedFound} unreplied chat(s), dispatched{' '}
+              {scanResult.repliesDispatched} AI reply(ies).
+            </div>
+            <button className="btn-close-sm" onClick={() => setScanResult(null)}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {unrepliedChats.length > 0 ? (
+          <div className="unreplied-chats-list">
+            {unrepliedChats.map((c) => (
+              <div key={`${c.sessionId}_${c.chatId}`} className="unreplied-chat-item">
+                <div className="chat-avatar">
+                  <MessageCircle size={20} />
+                  {c.unreadCount > 0 && <span className="unread-dot">{c.unreadCount}</span>}
+                </div>
+                <div className="chat-content">
+                  <div className="chat-meta">
+                    <strong className="contact-name">{c.contactName}</strong>
+                    <span className="phone-tag">+{c.senderPhone}</span>
+                    <span className="session-badge">{c.sessionName}</span>
+                    {c.unreadCount > 0 && (
+                      <span className="unread-badge">{c.unreadCount} unread</span>
+                    )}
+                  </div>
+                  <p className="last-message">"{c.lastMessageText}"</p>
+                  <div className="chat-footer-meta">
+                    <span className="rule-badge">Rule: {c.ruleName}</span>
+                    {c.lastMessageTimestamp > 0 && (
+                      <span className="time-badge">
+                        <Clock size={12} /> {new Date(c.lastMessageTimestamp * 1000).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="unreplied-empty-state">
+            <CheckCircle2 size={24} className="text-green" />
+            <span>All incoming customer chats are up to date! No unreplied messages found from the previous days.</span>
+          </div>
+        )}
       </div>
 
       <div className="ai-content-layout">

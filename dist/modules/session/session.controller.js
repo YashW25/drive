@@ -45,6 +45,22 @@ let SessionController = class SessionController {
         const sessions = await this.sessionService.findAll(apiKey?.allowedSessions, user?.supabaseId);
         return sessions.map(s => this.transformSession(s));
     }
+    async refreshAll(dto) {
+        const result = await this.sessionService.refreshAll(dto?.mode);
+        await this.auditService.logInfo(audit_log_entity_1.AuditAction.SESSIONS_REFRESHED, {
+            metadata: {
+                mode: dto?.mode || 'sessions',
+                count: result.total,
+            },
+        });
+        return result;
+    }
+    getRefreshConfig() {
+        return this.sessionService.getRefreshConfig();
+    }
+    updateRefreshConfig(dto) {
+        return this.sessionService.updateRefreshConfig(dto);
+    }
     async findOne(id) {
         const session = await this.sessionService.findOne(id);
         return this.transformSession(session);
@@ -60,6 +76,14 @@ let SessionController = class SessionController {
     async start(id) {
         const session = await this.sessionService.start(id);
         await this.auditService.logInfo(audit_log_entity_1.AuditAction.SESSION_STARTED, {
+            sessionId: session.id,
+            sessionName: session.name,
+        });
+        return this.transformSession(session);
+    }
+    async restart(id) {
+        const session = await this.sessionService.restart(id);
+        await this.auditService.logInfo(audit_log_entity_1.AuditAction.SESSION_RESTARTED, {
             sessionId: session.id,
             sessionName: session.name,
         });
@@ -155,6 +179,35 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SessionController.prototype, "findAll", null);
 __decorate([
+    (0, common_1.Post)('refresh-all'),
+    (0, auth_decorators_1.RequireRole)(api_key_entity_1.ApiKeyRole.OPERATOR),
+    (0, swagger_1.ApiOperation)({ summary: 'Refresh all active WhatsApp sessions or restart the WhatsApp service' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Sessions refreshed' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.RefreshAllSessionsDto]),
+    __metadata("design:returntype", Promise)
+], SessionController.prototype, "refreshAll", null);
+__decorate([
+    (0, common_1.Get)('refresh-config'),
+    (0, auth_decorators_1.RequireRole)(api_key_entity_1.ApiKeyRole.OPERATOR),
+    (0, swagger_1.ApiOperation)({ summary: 'Get WhatsApp auto-refresh schedule and maintenance configuration' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Auto-refresh configuration', type: dto_1.AutoRefreshConfigDto }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", dto_1.AutoRefreshConfigDto)
+], SessionController.prototype, "getRefreshConfig", null);
+__decorate([
+    (0, common_1.Put)('refresh-config'),
+    (0, auth_decorators_1.RequireRole)(api_key_entity_1.ApiKeyRole.OPERATOR),
+    (0, swagger_1.ApiOperation)({ summary: 'Update WhatsApp auto-refresh schedule and maintenance configuration' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Updated configuration', type: dto_1.AutoRefreshConfigDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.UpdateRefreshConfigDto]),
+    __metadata("design:returntype", dto_1.AutoRefreshConfigDto)
+], SessionController.prototype, "updateRefreshConfig", null);
+__decorate([
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Get session by ID' }),
     (0, swagger_1.ApiParam)({ name: 'id', description: 'Session ID' }),
@@ -201,6 +254,22 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], SessionController.prototype, "start", null);
+__decorate([
+    (0, common_1.Post)(':id/restart'),
+    (0, auth_decorators_1.RequireRole)(api_key_entity_1.ApiKeyRole.OPERATOR),
+    (0, swagger_1.ApiOperation)({ summary: 'Restart / refresh a WhatsApp session without changing its ID' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Session ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Session restarted and refreshed',
+        type: dto_1.SessionResponseDto,
+    }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Session not found' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], SessionController.prototype, "restart", null);
 __decorate([
     (0, common_1.Post)(':id/stop'),
     (0, auth_decorators_1.RequireRole)(api_key_entity_1.ApiKeyRole.OPERATOR),

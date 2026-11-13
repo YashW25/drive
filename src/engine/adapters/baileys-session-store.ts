@@ -14,6 +14,7 @@ interface LastMessage {
   key: WAMessageKey;
   timestamp: number;
   text: string;
+  fromMe?: boolean;
 }
 
 /**
@@ -106,7 +107,12 @@ export class BaileysSessionStore {
       return; // keep the newest
     }
     const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? '';
-    this.lastMessages.set(chatId, { key: msg.key, timestamp, text });
+    this.lastMessages.set(chatId, {
+      key: msg.key,
+      timestamp,
+      text,
+      fromMe: msg.key.fromMe === true,
+    });
   }
 
   listContacts(): Contact[] {
@@ -122,9 +128,9 @@ export class BaileysSessionStore {
     return [...this.chats.values()].map(c => this.toNeutralChat(c));
   }
 
-  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null {
+  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; text?: string; fromMe?: boolean } | null {
     const m = this.lastMessages.get(chatId) ?? this.lastMessages.get(this.toEngineJid(chatId));
-    return m ? { key: m.key, timestamp: m.timestamp } : null;
+    return m ? { key: m.key, timestamp: m.timestamp, text: m.text, fromMe: m.fromMe } : null;
   }
 
   resolvePhone(id: string): string | null {
@@ -201,6 +207,7 @@ export class BaileysSessionStore {
       unreadCount: c.unreadCount ?? 0,
       timestamp: last?.timestamp ?? this.toUnixSeconds(c.conversationTimestamp),
       lastMessage: last?.text,
+      lastMessageFromMe: last?.fromMe,
     };
   }
 

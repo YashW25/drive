@@ -3,13 +3,48 @@ import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { AiAutoReplyRule, AiTriggerType } from './entities/ai-rule.entity';
 import { CreateAiRuleDto, UpdateAiRuleDto, TestAiDto } from './dto/ai-rule.dto';
+import { Message, MessageDirection } from '../message/entities/message.entity';
 import { SessionService } from '../session/session.service';
 import { MessageService } from '../message/message.service';
 import { HookManager } from '../../core/hooks';
-import { IncomingMessage } from '../../engine/interfaces/whatsapp-engine.interface';
+import { SessionStatus } from '../session/entities/session.entity';
+import { IncomingMessage, ChatSummary } from '../../engine/interfaces/whatsapp-engine.interface';
 
 const DEFAULT_AI_ENDPOINT = 'https://ai.innovaradynamics.in/v1/chat';
 const DEFAULT_AI_KEY = 'inv_EKnXYFij82V2noa9udqJ3zA6pjqXIxvI8md_AoER838';
+
+export interface UnrepliedChatInfo {
+  sessionId: string;
+  sessionName: string;
+  chatId: string;
+  contactName: string;
+  senderPhone: string;
+  unreadCount: number;
+  lastMessageText: string;
+  lastMessageTimestamp: number;
+  lastMessageDirection: 'incoming' | 'outgoing';
+  ruleId: string;
+  ruleName: string;
+  systemPrompt?: string;
+}
+
+export interface UnrepliedScanSummary {
+  scannedSessions: number;
+  scannedChats: number;
+  unrepliedFound: number;
+  repliesDispatched: number;
+  details: Array<{
+    chatId: string;
+    contactName: string;
+    senderPhone: string;
+    incomingText: string;
+    replyText?: string;
+    ruleName: string;
+    success: boolean;
+    error?: string;
+    durationMs?: number;
+  }>;
+}
 
 @Injectable()
 export class AiService implements OnModuleInit {
@@ -20,6 +55,8 @@ export class AiService implements OnModuleInit {
   constructor(
     @InjectRepository(AiAutoReplyRule, 'data')
     private readonly ruleRepository: Repository<AiAutoReplyRule>,
+    @InjectRepository(Message, 'data')
+    private readonly messageRepository: Repository<Message>,
     @InjectDataSource('data')
     private readonly dataSource: DataSource,
     private readonly sessionService: SessionService,
@@ -31,7 +68,7 @@ export class AiService implements OnModuleInit {
     // 1. Ensure table exists in data database
     await this.ensureSchema();
 
-    // 2. Register with the global HookManager for message:received events
+    // 2. Register with the global HookManager for message:received events (real-time replies)
     this.hookManager.register(
       'ai-auto-reply',
       'message:received',
@@ -47,7 +84,32 @@ export class AiService implements OnModuleInit {
       100, // lower priority to run after system message ingestion
     );
 
-    this.logger.log('AI Auto-Reply service initialized and listening for incoming messages');
+    // 3. Register for session:ready events to scan previous day & unreplied chats once synced
+    this.hookManager.register(
+      'ai-auto-reply-ready',
+      'session:ready',
+      async ctx => {
+        if (ctx.sessionId) {
+          this.logger.log(`Session ${ctx.sessionId} connected. Scheduling unreplied chat scan in 6s...`);
+          setTimeout(() => {
+            void this.scanAndProcessUnrepliedChats(ctx.sessionId).catch(err => {
+              this.logger.error(`Error in automated unreplied chat scan for ${ctx.sessionId}: ${String(err)}`);
+            });
+          }, 6000);
+        }
+        return { continue: true, data: ctx.data };
+      },
+      90,
+    );
+
+    // 4. Background sweep every 3 minutes for any missed unreplied chats
+    setInterval(() => {
+      void this.scanAndProcessUnrepliedChats().catch(err => {
+        this.logger.error(`Error in periodic unreplied chats background scan: ${String(err)}`);
+      });
+    }, 3 * 60 * 1000);
+
+    this.logger.log('AI Auto-Reply service initialized (listening for live messages, session syncs, and unreplied sweeps)');
   }
 
   /** Ensure the database table exists regardless of migration state */
@@ -423,5 +485,254 @@ export class AiService implements OnModuleInit {
         durationMs: Date.now() - start,
       };
     }
+  }
+
+  // --- Unread & Unreplied Chat Detection and Processing ---
+
+  /**
+   * Scans active WhatsApp sessions for 1-on-1 chats from the previous day / recent days
+   * that have unread messages or where the contact has sent a message that has NOT been replied to.
+   */
+  async detectUnrepliedChats(
+    targetSessionId?: string,
+    maxAgeHours = 48,
+  ): Promise<UnrepliedChatInfo[]> {
+    const unreplied: UnrepliedChatInfo[] = [];
+    const minTimestamp = Math.floor(Date.now() / 1000) - maxAgeHours * 3600;
+
+    // 1. Fetch sessions
+    const sessions = await this.sessionService.findAll();
+    const activeSessions = sessions.filter(
+      s => s.status === SessionStatus.READY && (!targetSessionId || targetSessionId === '*' || s.id === targetSessionId),
+    );
+
+    for (const session of activeSessions) {
+      const engine = this.sessionService.getEngine(session.id);
+      if (!engine) continue;
+
+      // 2. Fetch active rules for this session or global '*'
+      const rules = await this.ruleRepository.find({
+        where: [{ enabled: true, sessionId: session.id }, { enabled: true, sessionId: '*' }],
+      });
+      if (!rules.length) continue;
+
+      // 3. Collect chats from WhatsApp engine
+      let engineChats: ChatSummary[] = [];
+      try {
+        engineChats = await engine.getChats();
+      } catch (err) {
+        this.logger.warn(`Failed to get chats from engine for session ${session.id}: ${String(err)}`);
+      }
+
+      // 4. Also collect distinct chats with activity from the messages database
+      const dbRecentChatIds = await this.messageRepository
+        .createQueryBuilder('m')
+        .select('DISTINCT m.chatId', 'chatId')
+        .where('m.sessionId = :sessionId', { sessionId: session.id })
+        .andWhere('m.timestamp >= :minTimestamp', { minTimestamp })
+        .getRawMany<{ chatId: string }>();
+
+      const allChatIds = new Set<string>();
+      for (const c of engineChats) {
+        if (!c.isGroup && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter')) {
+          allChatIds.add(c.id);
+        }
+      }
+      for (const r of dbRecentChatIds) {
+        if (r.chatId && !r.chatId.endsWith('@g.us') && !r.chatId.endsWith('@broadcast') && !r.chatId.endsWith('@newsletter')) {
+          allChatIds.add(r.chatId);
+        }
+      }
+
+      // 5. Inspect each candidate chat
+      for (const chatId of allChatIds) {
+        const engineChat = engineChats.find(c => c.id === chatId);
+        const unreadCount = engineChat?.unreadCount ?? 0;
+
+        // Fetch recent messages for this chat (newest first)
+        const recentMessages = await this.messageRepository.find({
+          where: { sessionId: session.id, chatId },
+          order: { timestamp: 'DESC' },
+          take: 10,
+        });
+
+        let isUnreplied = false;
+        let incomingText = '';
+        let incomingTimestamp = engineChat?.timestamp ?? 0;
+        let direction: 'incoming' | 'outgoing' = 'incoming';
+
+        if (recentMessages.length > 0) {
+          const newest = recentMessages[0];
+          direction = newest.direction;
+          if (newest.direction === MessageDirection.INCOMING) {
+            isUnreplied = true;
+            // Aggregate consecutive incoming messages without an answer
+            const pending: Message[] = [];
+            for (const m of recentMessages) {
+              if (m.direction === MessageDirection.INCOMING) {
+                pending.unshift(m);
+              } else {
+                break;
+              }
+            }
+            incomingText = pending
+              .map(p => p.body?.trim())
+              .filter(Boolean)
+              .join('\n');
+            incomingTimestamp = newest.timestamp ?? Math.floor(newest.createdAt.getTime() / 1000);
+          } else {
+            // Newest message is outgoing -> already replied!
+            isUnreplied = false;
+          }
+        } else if (engineChat && (unreadCount > 0 || engineChat.lastMessageFromMe === false)) {
+          // If not in DB yet, but engine shows unread or contact's last message
+          isUnreplied = true;
+          incomingText = engineChat.lastMessage || 'Hello';
+          incomingTimestamp = engineChat.timestamp;
+        }
+
+        // Must be unreplied, within time window (or unread), and non-empty
+        if (!isUnreplied || (!unreadCount && incomingTimestamp < minTimestamp) || !incomingText.trim()) {
+          continue;
+        }
+
+        const senderPhone = chatId.replace(/@.*$/, '').replace(/\D/g, '');
+        const contactName = engineChat?.name || senderPhone;
+
+        // Match against active rules
+        for (const rule of rules) {
+          const dummyIncoming: IncomingMessage = {
+            id: `scan_${Date.now()}`,
+            chatId,
+            from: chatId,
+            to: session.phone || '',
+            body: incomingText,
+            timestamp: incomingTimestamp,
+            fromMe: false,
+            isGroup: false,
+            type: 'text',
+          };
+
+          const isMatch = await this.evaluateRuleMatch(session.id, rule, dummyIncoming, senderPhone, incomingText);
+          if (isMatch) {
+            unreplied.push({
+              sessionId: session.id,
+              sessionName: session.name,
+              chatId,
+              contactName,
+              senderPhone,
+              unreadCount,
+              lastMessageText: incomingText,
+              lastMessageTimestamp: incomingTimestamp,
+              lastMessageDirection: direction,
+              ruleId: rule.id,
+              ruleName: rule.name,
+              systemPrompt: rule.systemPrompt || undefined,
+            });
+            break; // One rule per chat
+          }
+        }
+      }
+    }
+
+    return unreplied;
+  }
+
+  /**
+   * Scans unreplied chats and dispatches AI auto-replies
+   */
+  async scanAndProcessUnrepliedChats(
+    targetSessionId?: string,
+    options: { maxAgeHours?: number; dryRun?: boolean } = {},
+  ): Promise<UnrepliedScanSummary> {
+    const maxAgeHours = options.maxAgeHours ?? 48;
+    const dryRun = options.dryRun ?? false;
+
+    this.logger.log(
+      `Starting unreplied chats sweep (sessionId: ${targetSessionId || 'all'}, maxAgeHours: ${maxAgeHours}, dryRun: ${dryRun})`,
+    );
+
+    const unrepliedChats = await this.detectUnrepliedChats(targetSessionId, maxAgeHours);
+
+    const allSessions = await this.sessionService.findAll();
+    const summary: UnrepliedScanSummary = {
+      scannedSessions: targetSessionId && targetSessionId !== '*' ? 1 : allSessions.length,
+      scannedChats: unrepliedChats.length,
+      unrepliedFound: unrepliedChats.length,
+      repliesDispatched: 0,
+      details: [],
+    };
+
+    if (dryRun) {
+      summary.details = unrepliedChats.map(c => ({
+        chatId: c.chatId,
+        contactName: c.contactName,
+        senderPhone: c.senderPhone,
+        incomingText: c.lastMessageText,
+        ruleName: c.ruleName,
+        success: true,
+      }));
+      return summary;
+    }
+
+    // Process each unreplied chat
+    for (const item of unrepliedChats) {
+      const cooldownKey = `${item.ruleId}:${item.chatId}`;
+      const dedupeKey = `unreplied_${item.sessionId}_${item.chatId}_${item.lastMessageTimestamp}`;
+      const now = Date.now();
+      const lastSent = this.cooldownTracker.get(cooldownKey) || 0;
+
+      const rule = await this.ruleRepository.findOne({ where: { id: item.ruleId } });
+      if (!rule || !rule.enabled) continue;
+
+      const cooldownMs = (rule.cooldownSeconds || 10) * 1000;
+      if (now - lastSent < cooldownMs) {
+        this.logger.debug(`Skipping unreplied chat ${item.chatId} due to active cooldown`);
+        continue;
+      }
+
+      if (this.cooldownTracker.has(dedupeKey)) {
+        this.logger.debug(`Skipping unreplied chat ${item.chatId} - already replied to message timestamp ${item.lastMessageTimestamp}`);
+        continue;
+      }
+
+      this.cooldownTracker.set(cooldownKey, now);
+      this.cooldownTracker.set(dedupeKey, now);
+
+      const start = Date.now();
+      try {
+        await this.executeAiReply(item.sessionId, rule, item.chatId, item.lastMessageText);
+        const engine = this.sessionService.getEngine(item.sessionId);
+        if (engine) {
+          await engine.sendSeen(item.chatId).catch(() => undefined);
+        }
+
+        summary.repliesDispatched++;
+        summary.details.push({
+          chatId: item.chatId,
+          contactName: item.contactName,
+          senderPhone: item.senderPhone,
+          incomingText: item.lastMessageText,
+          ruleName: item.ruleName,
+          success: true,
+          durationMs: Date.now() - start,
+        });
+      } catch (err: any) {
+        summary.details.push({
+          chatId: item.chatId,
+          contactName: item.contactName,
+          senderPhone: item.senderPhone,
+          incomingText: item.lastMessageText,
+          ruleName: item.ruleName,
+          success: false,
+          error: err?.message || String(err),
+        });
+      }
+    }
+
+    this.logger.log(
+      `Finished unreplied chats sweep: found ${summary.unrepliedFound}, dispatched ${summary.repliesDispatched} reply(ies)`,
+    );
+    return summary;
   }
 }

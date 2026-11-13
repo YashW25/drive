@@ -6,12 +6,13 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AiService } from './ai.service';
-import { CreateAiRuleDto, UpdateAiRuleDto, TestAiDto } from './dto/ai-rule.dto';
+import { CreateAiRuleDto, UpdateAiRuleDto, TestAiDto, ScanUnrepliedDto } from './dto/ai-rule.dto';
 import { AiAutoReplyRule } from './entities/ai-rule.entity';
 import { RequireRole, CurrentUser } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
@@ -70,5 +71,30 @@ export class AiController {
   @ApiOperation({ summary: 'Test AI Assistant completion from dashboard' })
   async testAi(@Body() dto: TestAiDto) {
     return this.aiService.testAi(dto);
+  }
+
+  @Get('unreplied-chats')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'List currently unread / unreplied chats from previous day or recent activity' })
+  @ApiQuery({ name: 'sessionId', required: false, description: 'Filter by session ID' })
+  @ApiQuery({ name: 'maxAgeHours', required: false, description: 'Max age of chats in hours (default: 48)' })
+  async getUnrepliedChats(
+    @Query('sessionId') sessionId?: string,
+    @Query('maxAgeHours') maxAgeHours?: string,
+  ) {
+    return this.aiService.detectUnrepliedChats(
+      sessionId,
+      maxAgeHours ? parseInt(maxAgeHours, 10) : 48,
+    );
+  }
+
+  @Post('scan-and-reply')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'Scan previous day and recent chats for unreplied messages and send AI auto-replies' })
+  async scanAndReply(@Body() dto: ScanUnrepliedDto) {
+    return this.aiService.scanAndProcessUnrepliedChats(dto.sessionId, {
+      maxAgeHours: dto.maxAgeHours,
+      dryRun: dto.dryRun,
+    });
   }
 }

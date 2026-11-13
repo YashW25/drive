@@ -185,7 +185,7 @@ class BaileysAdapter {
             version,
             browser: BAILEYS_BROWSER,
             printQRInTerminal: false,
-            shouldSyncHistoryMessage: () => process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
+            shouldSyncHistoryMessage: () => true,
             syncFullHistory: process.env.BAILEYS_SYNC_FULL_HISTORY === 'true',
             getMessage: async (key) => {
                 if (!key?.id)
@@ -698,6 +698,10 @@ class BaileysAdapter {
         return this.unsupported('sendCatalog');
     }
     handleMessagesUpsert(event) {
+        if (event.type === 'append') {
+            this.captureHistoryMessages(event.messages ?? []);
+            return;
+        }
         if (event.type !== 'notify') {
             return;
         }

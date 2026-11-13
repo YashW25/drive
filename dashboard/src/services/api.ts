@@ -873,6 +873,39 @@ export interface TestAiResult {
   durationMs: number;
 }
 
+export interface UnrepliedChatInfo {
+  sessionId: string;
+  sessionName: string;
+  chatId: string;
+  contactName: string;
+  senderPhone: string;
+  unreadCount: number;
+  lastMessageText: string;
+  lastMessageTimestamp: number;
+  lastMessageDirection: 'incoming' | 'outgoing';
+  ruleId: string;
+  ruleName: string;
+  systemPrompt?: string;
+}
+
+export interface ScanAndReplyResult {
+  scannedSessions: number;
+  scannedChats: number;
+  unrepliedFound: number;
+  repliesDispatched: number;
+  details: Array<{
+    chatId: string;
+    contactName: string;
+    senderPhone: string;
+    incomingText: string;
+    replyText?: string;
+    ruleName: string;
+    success: boolean;
+    error?: string;
+    durationMs?: number;
+  }>;
+}
+
 export const aiApi = {
   getRules: () => request<AiAutoReplyRule[]>('/ai/rules'),
   getRule: (id: string) => request<AiAutoReplyRule>(`/ai/rules/${id}`),
@@ -894,6 +927,18 @@ export const aiApi = {
     request<TestAiResult>('/ai/test', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  getUnrepliedChats: (sessionId?: string, maxAgeHours?: number) => {
+    const params = new URLSearchParams();
+    if (sessionId) params.append('sessionId', sessionId);
+    if (maxAgeHours) params.append('maxAgeHours', String(maxAgeHours));
+    const qs = params.toString();
+    return request<UnrepliedChatInfo[]>(`/ai/unreplied-chats${qs ? `?${qs}` : ''}`);
+  },
+  scanAndReply: (data?: { sessionId?: string; maxAgeHours?: number; dryRun?: boolean }) =>
+    request<ScanAndReplyResult>('/ai/scan-and-reply', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
     }),
 };
 
