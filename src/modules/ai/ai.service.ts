@@ -9,9 +9,30 @@ import { MessageService } from '../message/message.service';
 import { HookManager } from '../../core/hooks';
 import { SessionStatus } from '../session/entities/session.entity';
 import { IncomingMessage, ChatSummary } from '../../engine/interfaces/whatsapp-engine.interface';
+import { toNeutralJid } from '../../engine/identity/wa-id';
 
-const DEFAULT_AI_ENDPOINT = 'https://ai.innovaradynamics.in/v1/chat';
-const DEFAULT_AI_KEY = 'inv_EKnXYFij82V2noa9udqJ3zA6pjqXIxvI8md_AoER838';
+export const DEFAULT_AI_ENDPOINT = 'https://ai.innovaradynamics.in/v1/chat';
+export const DEFAULT_AI_KEY = 'inv_EKnXYFij82V2noa9udqJ3zA6pjqXIxvI8md_AoER838';
+
+export const DEFAULT_SYSTEM_PROMPT =
+  'You are SAMM (Simple AI Made by Me), the intelligent personal WhatsApp AI assistant for Yash Warulkar.\n\n' +
+  'Key Knowledge & Identity:\n' +
+  '- Yash Warulkar: Co-Founder & Chief Technology Officer (CTO) of Innovara Dynamics. AI & Full-Stack Product Engineer based in Pune, Maharashtra, India. Portfolio: https://yash.innovaradynamics.in\n' +
+  '- Innovara Dynamics: MSME-registered tech startup founded in Pune, India, specializing in AI orchestration, automation, digital trust infrastructure, edge AI architectures, and custom enterprise software platforms. Website: https://innovaradynamics.in\n' +
+  '- Flagship Products & Projects:\n' +
+  '  1. OpenWebVerse: Decentralized, AI-native web building platform.\n' +
+  '  2. TilesView AI: Computer vision tool using PyTorch, YOLO, and SAM2 (Segment Anything).\n' +
+  '  3. PeopleOS: Full-stack enterprise HR and workforce management SaaS platform.\n' +
+  '  4. QueryBridge X / Zentro: Intelligent developer tools & smart procurement workflows using LLMs & vector databases.\n' +
+  '  5. DigiCredLocker: Digital trust and verifiable credentials platform.\n' +
+  '  6. SkeletonOS: Universal modular web OS powered by Rust, TypeScript, and WebAssembly.\n\n' +
+  'Behavioral Guidelines:\n' +
+  '1. When asked who you are or what your role is, state clearly that you are SAMM, personal AI assistant for Yash Warulkar (Co-Founder & CTO of Innovara Dynamics).\n' +
+  '2. When asked about Yash Warulkar, his post/role, or Innovara Dynamics, provide accurate facts based on the knowledge above.\n' +
+  '3. Be polite, generous, respectful, and concise (reply within 1 to 3 sentences). If Yash is currently unavailable, reassure the contact that Yash will get back to them soon.\n' +
+  '4. Support multi-language replies naturally. If asked in Marathi or Hindi, reply politely and accurately in that language. For example, if asked for Marathi book recommendations, suggest acclaimed classics like Mrityunjay, Shyamchi Aai, Yayati, Batatyachi Chaal, or Kosla.';
+
+export const CONVERSATION_SESSION_WINDOW_MS = 15 * 60 * 1000; // 15-minute conversation session window
 
 export interface UnrepliedChatInfo {
   sessionId: string;
@@ -66,8 +87,20 @@ export function parseRuleContactEntry(entry: string): { phone: string; name: str
 @Injectable()
 export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
-  /** Tracks last auto-reply timestamp per rule & chat to enforce cooldowns: `${ruleId}:${chatId}` -> epoch ms */
+  /** Tracks last auto-reply timestamp per rule & chat to enforce cooldowns: `${ruleId}:${neutralChatId}` -> epoch ms */
   private readonly cooldownTracker = new Map<string, number>();
+
+  /** In-memory message deduplication cache to prevent re-processing identical message IDs */
+  private readonly processedMessageIds = new Map<string, number>();
+
+  /** In-flight concurrency lock per chat session: `${sessionId}:${neutralChatId}` */
+  private readonly inFlightReplies = new Set<string>();
+
+  /** Tracks newest processed incoming message timestamp per chat: `${sessionId}:${neutralChatId}` -> epoch seconds */
+  private readonly lastProcessedMessageTimestamp = new Map<string, number>();
+
+  /** Tracks last interaction timestamp per chat session for the 15-minute window: `${sessionId}:${neutralChatId}` -> epoch ms */
+  private readonly chatLastInteractionTime = new Map<string, number>();
 
   constructor(
     @InjectRepository(AiAutoReplyRule, 'data')
@@ -126,7 +159,27 @@ export class AiService implements OnModuleInit {
       });
     }, 3 * 60 * 1000);
 
+    // 5. Periodic cleanup of deduplication and cooldown caches every 10 minutes
+    setInterval(() => {
+      this.cleanupMemoryCaches();
+    }, 10 * 60 * 1000);
+
     this.logger.log('AI Auto-Reply service initialized (listening for live messages, session syncs, and unreplied sweeps)');
+  }
+
+  /** Cleans up stale entries in in-memory caches older than 1 hour */
+  private cleanupMemoryCaches(): void {
+    const now = Date.now();
+    for (const [id, timestamp] of this.processedMessageIds.entries()) {
+      if (now - timestamp > 3600000) {
+        this.processedMessageIds.delete(id);
+      }
+    }
+    for (const [key, timestamp] of this.cooldownTracker.entries()) {
+      if (now - timestamp > 3600000) {
+        this.cooldownTracker.delete(key);
+      }
+    }
   }
 
   /** Ensure the database table exists regardless of migration state */
@@ -155,6 +208,16 @@ export class AiService implements OnModuleInit {
             updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
+
+        // Upgrade legacy / outdated system prompts to the comprehensive Yash Warulkar & Innovara Dynamics knowledge prompt
+        await this.dataSource.query(`
+          UPDATE ai_auto_reply_rules
+          SET systemPrompt = ?
+          WHERE systemPrompt IS NULL
+             OR systemPrompt = ''
+             OR systemPrompt LIKE '%Jai Industrial Infrastructure%'
+             OR (systemPrompt LIKE '%Yash Warulkar%' AND systemPrompt NOT LIKE '%Chief Technology Officer%')
+        `, [DEFAULT_SYSTEM_PROMPT]).catch(() => undefined);
       } else {
         await this.dataSource.query(`
           CREATE TABLE IF NOT EXISTS ai_auto_reply_rules (
@@ -177,6 +240,15 @@ export class AiService implements OnModuleInit {
             "updatedAt" TIMESTAMP DEFAULT NOW()
           );
         `);
+
+        await this.dataSource.query(`
+          UPDATE ai_auto_reply_rules
+          SET "systemPrompt" = $1
+          WHERE "systemPrompt" IS NULL
+             OR "systemPrompt" = ''
+             OR "systemPrompt" LIKE '%Jai Industrial Infrastructure%'
+             OR ("systemPrompt" LIKE '%Yash Warulkar%' AND "systemPrompt" NOT LIKE '%Chief Technology Officer%')
+        `, [DEFAULT_SYSTEM_PROMPT]).catch(() => undefined);
       }
     } catch (err) {
       this.logger.warn(`Schema check notice (may already exist): ${String(err)}`);
@@ -192,17 +264,29 @@ export class AiService implements OnModuleInit {
       return;
     }
 
-    // 2. Skip non-text or broadcast / newsletter channels
+    // 2. Prevent duplicate processing of the same incoming WhatsApp message ID
+    const msgId = incoming.id || (incoming as any).waMessageId;
+    if (msgId) {
+      if (this.processedMessageIds.has(msgId)) {
+        this.logger.debug(`Message ${msgId} already processed by AI auto-reply, skipping duplicate trigger`);
+        return;
+      }
+      this.processedMessageIds.set(msgId, Date.now());
+    }
+
+    // 3. Skip non-text or broadcast / newsletter channels
     const body = incoming.body?.trim();
     if (!body) {
       return;
     }
-    const chatId = incoming.chatId;
-    if (!chatId || chatId.endsWith('@g.us') || chatId.endsWith('@newsletter') || chatId.endsWith('@broadcast')) {
+    const rawChatId = incoming.chatId;
+    if (!rawChatId || rawChatId.endsWith('@g.us') || rawChatId.endsWith('@newsletter') || rawChatId.endsWith('@broadcast')) {
       return; // Skip group chats, newsletters, broadcasts
     }
 
-    // 3. Find active rules for this session or global '*'
+    const neutralChatId = toNeutralJid(rawChatId);
+
+    // 4. Find active rules for this session or global '*'
     const rules = await this.ruleRepository.find({
       where: [{ enabled: true, sessionId }, { enabled: true, sessionId: '*' }],
     });
@@ -227,24 +311,36 @@ export class AiService implements OnModuleInit {
         continue;
       }
 
-      // Check cooldown
-      const cooldownKey = `${rule.id}:${chatId}`;
+      // Check cooldown using neutral chat ID
+      const cooldownKey = `${rule.id}:${neutralChatId}`;
       const now = Date.now();
       const lastSent = this.cooldownTracker.get(cooldownKey) || 0;
       const cooldownMs = (rule.cooldownSeconds || 10) * 1000;
 
       if (now - lastSent < cooldownMs) {
         this.logger.debug(
-          `AI auto-reply for ${chatId} on rule "${rule.name}" is on cooldown (${Math.ceil(
+          `AI auto-reply for ${neutralChatId} on rule "${rule.name}" is on cooldown (${Math.ceil(
             (cooldownMs - (now - lastSent)) / 1000,
           )}s remaining)`,
         );
         continue;
       }
 
-      // Trigger AI reply
+      // Dedupe against unreplied background scanner
+      const incomingTs = incoming.timestamp ?? Math.floor(now / 1000);
+      const dedupeKey = `unreplied_${sessionId}_${neutralChatId}_${incomingTs}`;
+      if (this.cooldownTracker.has(dedupeKey)) {
+        this.logger.debug(`Message timestamp ${incomingTs} already handled for ${neutralChatId}`);
+        continue;
+      }
+
+      // Mark timestamps in cooldown and timestamp tracker
       this.cooldownTracker.set(cooldownKey, now);
-      await this.executeAiReply(sessionId, rule, chatId, body);
+      this.cooldownTracker.set(dedupeKey, now);
+      this.lastProcessedMessageTimestamp.set(`${sessionId}:${neutralChatId}`, incomingTs);
+
+      // Trigger AI reply
+      await this.executeAiReply(sessionId, rule, rawChatId, body);
       break; // One auto-reply per message
     }
   }
@@ -407,20 +503,70 @@ export class AiService implements OnModuleInit {
     chatId: string,
     userMessage: string,
   ): Promise<void> {
-    const engine = this.sessionService.getEngine(sessionId);
-    if (!engine) {
-      this.logger.warn(`Cannot send AI auto-reply: Session '${sessionId}' is not active`);
+    const neutralChatId = toNeutralJid(chatId);
+    const lockKey = `${sessionId}:${neutralChatId}`;
+
+    if (this.inFlightReplies.has(lockKey)) {
+      this.logger.warn(`AI auto-reply already in-flight for ${lockKey}, skipping duplicate concurrent dispatch`);
       return;
     }
+    this.inFlightReplies.add(lockKey);
 
     try {
+      const engine = this.sessionService.getEngine(sessionId);
+      if (!engine) {
+        this.logger.warn(`Cannot send AI auto-reply: Session '${sessionId}' is not active`);
+        return;
+      }
+
       // 1. Send typing presence state
       await engine.sendChatState(chatId, 'typing').catch(() => undefined);
+      if (neutralChatId !== chatId) {
+        await engine.sendChatState(neutralChatId, 'typing').catch(() => undefined);
+      }
 
-      // 2. Call Innovara AI endpoint
+      // 2. Track 15-minute conversation session window
+      const chatSessionKey = `${sessionId}:${neutralChatId}`;
+      let lastInteraction = this.chatLastInteractionTime.get(chatSessionKey) || 0;
+
+      if (!lastInteraction) {
+        try {
+          const variants = [
+            neutralChatId,
+            neutralChatId.replace(/@c\.us$/, '@s.whatsapp.net'),
+            neutralChatId.replace(/@s\.whatsapp\.net$/, '@c.us'),
+          ];
+          const lastOutgoing = await this.messageRepository
+            .createQueryBuilder('m')
+            .where('m.sessionId = :sessionId', { sessionId })
+            .andWhere('m.chatId IN (:...variants)', { variants })
+            .andWhere('m.direction = :dir', { dir: MessageDirection.OUTGOING })
+            .orderBy('m.timestamp', 'DESC')
+            .addOrderBy('m.createdAt', 'DESC')
+            .take(1)
+            .getOne();
+
+          if (lastOutgoing) {
+            const outgoingMs = lastOutgoing.timestamp
+              ? lastOutgoing.timestamp * 1000
+              : lastOutgoing.createdAt?.getTime() || 0;
+            if (outgoingMs > 0) {
+              lastInteraction = outgoingMs;
+              this.chatLastInteractionTime.set(chatSessionKey, outgoingMs);
+            }
+          }
+        } catch {
+          // ignore lookup error
+        }
+      }
+
+      const now = Date.now();
+      const isNewSession = !lastInteraction || now - lastInteraction >= CONVERSATION_SESSION_WINDOW_MS;
+
+      // 3. Call Innovara AI endpoint
       const aiEndpoint = rule.aiEndpoint || DEFAULT_AI_ENDPOINT;
       const aiKey = rule.aiApiKey || DEFAULT_AI_KEY;
-      const conversationId = `wa_${sessionId}_${chatId.replace(/\D/g, '')}`;
+      const conversationId = `wa_${sessionId}_${neutralChatId.replace(/\D/g, '')}`;
 
       const payload: Record<string, unknown> = {
         message: userMessage,
@@ -430,11 +576,19 @@ export class AiService implements OnModuleInit {
         max_tokens: rule.maxTokens && rule.maxTokens >= 50 ? rule.maxTokens : 180,
       };
 
-      if (rule.systemPrompt && rule.systemPrompt.trim()) {
-        payload.system_prompt = rule.systemPrompt.trim();
+      const baseSystemPrompt = rule.systemPrompt && rule.systemPrompt.trim()
+        ? rule.systemPrompt.trim()
+        : DEFAULT_SYSTEM_PROMPT;
+
+      if (isNewSession) {
+        payload.system_prompt = `${baseSystemPrompt}\n\n[CONVERSATION SESSION CONTEXT]: This is the start of a new conversation session (user has been idle for >15 minutes or this is a new chat). You MUST begin your response by warmly introducing yourself as SAMM, personal AI assistant for Yash Warulkar (Co-Founder & CTO of Innovara Dynamics), before addressing or answering the contact's message.`;
+      } else {
+        payload.system_prompt = `${baseSystemPrompt}\n\n[CONVERSATION SESSION CONTEXT]: This is an ongoing conversation within the active 15-minute session window. Do NOT repeat your name or formal self-introduction; reply directly and conversationally to the user's message.`;
       }
 
-      this.logger.log(`Invoking AI for chat ${chatId} using endpoint ${aiEndpoint}`);
+      this.logger.log(
+        `Invoking AI for chat ${chatId} (${isNewSession ? 'NEW 15-min session' : 'active session'}) using endpoint ${aiEndpoint}`,
+      );
 
       const response = await fetch(aiEndpoint, {
         method: 'POST',
@@ -459,8 +613,6 @@ export class AiService implements OnModuleInit {
       };
 
       let reply = data.response || data.choices?.[0]?.message?.content || '';
-
-      // Clean reasoning or thinking tags if present
       reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
       if (!reply) {
@@ -468,18 +620,48 @@ export class AiService implements OnModuleInit {
         return;
       }
 
-      // 3. Send reply through MessageService (persists + simulates typing)
+      // Enforce the 15-minute session introduction rule reliably
+      if (isNewSession) {
+        const lowerReply = reply.toLowerCase();
+        const hasSelfIntro =
+          lowerReply.includes('samm') ||
+          lowerReply.includes('ai assistant') ||
+          lowerReply.includes('assistant for yash') ||
+          lowerReply.includes('yash warulkar');
+
+        if (!hasSelfIntro) {
+          reply = `Hello! I am SAMM, AI assistant for Yash Warulkar (Co-Founder & CTO of Innovara Dynamics). ${reply}`;
+        }
+      } else {
+        // Strip repeated introductory greeting if echoed during active ongoing conversation
+        reply = reply.replace(/^(hello|hi|hey)!\s*i am samm[^.!?]*[.!?]\s*/i, '').trim();
+        reply = reply.replace(/^i am samm[^.!?]*[.!?]\s*/i, '').trim();
+        if (!reply) {
+          reply = data.response || 'I am here to help!';
+        }
+      }
+
+      // 4. Send reply through MessageService (persists + simulates typing)
       await this.messageService.sendText(sessionId, {
         chatId,
         text: reply,
       });
 
-      // 4. Update counter
+      // 5. Immediately mark as seen on WhatsApp engine to prevent stale unread flags
+      await engine.sendSeen(chatId).catch(() => undefined);
+      if (neutralChatId !== chatId) {
+        await engine.sendSeen(neutralChatId).catch(() => undefined);
+      }
+
+      // 6. Update interaction timestamp and counter
+      this.chatLastInteractionTime.set(chatSessionKey, Date.now());
       await this.ruleRepository.increment({ id: rule.id }, 'totalRepliesSent', 1);
 
-      this.logger.log(`AI Auto-Reply sent to ${chatId} (${reply.slice(0, 50)}...)`);
+      this.logger.log(`AI Auto-Reply sent to ${chatId} (${reply.slice(0, 60)}...)`);
     } catch (err) {
       this.logger.error(`Failed to execute AI auto-reply for ${chatId}: ${String(err)}`);
+    } finally {
+      this.inFlightReplies.delete(lockKey);
     }
   }
 
@@ -563,9 +745,10 @@ export class AiService implements OnModuleInit {
         max_tokens: 180,
       };
 
-      if (dto.systemPrompt && dto.systemPrompt.trim()) {
-        payload.system_prompt = dto.systemPrompt.trim();
-      }
+      const testPrompt = dto.systemPrompt && dto.systemPrompt.trim()
+        ? dto.systemPrompt.trim()
+        : DEFAULT_SYSTEM_PROMPT;
+      payload.system_prompt = testPrompt;
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -659,26 +842,37 @@ export class AiService implements OnModuleInit {
       const allChatIds = new Set<string>();
       for (const c of engineChats) {
         if (!c.isGroup && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter')) {
-          allChatIds.add(c.id);
+          allChatIds.add(toNeutralJid(c.id));
         }
       }
       for (const r of dbRecentChatIds) {
         if (r.chatId && !r.chatId.endsWith('@g.us') && !r.chatId.endsWith('@broadcast') && !r.chatId.endsWith('@newsletter')) {
-          allChatIds.add(r.chatId);
+          allChatIds.add(toNeutralJid(r.chatId));
         }
       }
 
       // 5. Inspect each candidate chat
-      for (const chatId of allChatIds) {
-        const engineChat = engineChats.find(c => c.id === chatId);
+      for (const neutralChatId of allChatIds) {
+        const rawVariants = [
+          neutralChatId,
+          neutralChatId.replace(/@c\.us$/, '@s.whatsapp.net'),
+          neutralChatId.replace(/@s\.whatsapp\.net$/, '@c.us'),
+        ];
+
+        const engineChat = engineChats.find(
+          c => rawVariants.includes(c.id) || toNeutralJid(c.id) === neutralChatId,
+        );
         const unreadCount = engineChat?.unreadCount ?? 0;
 
-        // Fetch recent messages for this chat (newest first)
-        const recentMessages = await this.messageRepository.find({
-          where: { sessionId: session.id, chatId },
-          order: { timestamp: 'DESC' },
-          take: 10,
-        });
+        // Fetch recent messages for this chat (newest first) matching any dialect variant
+        const recentMessages = await this.messageRepository
+          .createQueryBuilder('m')
+          .where('m.sessionId = :sessionId', { sessionId: session.id })
+          .andWhere('m.chatId IN (:...variants)', { variants: rawVariants })
+          .orderBy('m.timestamp', 'DESC')
+          .addOrderBy('m.createdAt', 'DESC')
+          .take(10)
+          .getMany();
 
         let isUnreplied = false;
         let incomingText = '';
@@ -720,14 +914,20 @@ export class AiService implements OnModuleInit {
           continue;
         }
 
-        let senderPhone = chatId.replace(/@.*$/, '').replace(/\D/g, '');
+        // Check if live handler already processed this timestamp
+        const lastProcessedTs = this.lastProcessedMessageTimestamp.get(`${session.id}:${neutralChatId}`) || 0;
+        if (incomingTimestamp > 0 && incomingTimestamp <= lastProcessedTs) {
+          continue;
+        }
+
+        let senderPhone = neutralChatId.replace(/@.*$/, '').replace(/\D/g, '');
         let contactName = engineChat?.name || senderPhone;
 
-        if (chatId.includes('@lid')) {
-          const resolved = await this.resolveLidPhone(session.id, chatId);
+        if (neutralChatId.includes('@lid')) {
+          const resolved = await this.resolveLidPhone(session.id, neutralChatId);
           if (resolved) {
             senderPhone = resolved;
-            if (!engineChat?.name || engineChat.name === chatId.replace(/@.*$/, '')) {
+            if (!engineChat?.name || engineChat.name === neutralChatId.replace(/@.*$/, '')) {
               contactName = resolved;
             }
           }
@@ -737,15 +937,15 @@ export class AiService implements OnModuleInit {
         for (const rule of rules) {
           const dummyIncoming: IncomingMessage = {
             id: `scan_${Date.now()}`,
-            chatId,
-            from: chatId,
+            chatId: neutralChatId,
+            from: neutralChatId,
             to: session.phone || '',
             body: incomingText,
             timestamp: incomingTimestamp,
             fromMe: false,
             isGroup: false,
             type: 'text',
-            senderPhone: senderPhone !== chatId.replace(/@.*$/, '').replace(/\D/g, '') ? senderPhone : undefined,
+            senderPhone: senderPhone !== neutralChatId.replace(/@.*$/, '').replace(/\D/g, '') ? senderPhone : undefined,
             contact: {
               name: contactName,
               pushName: contactName,
@@ -757,7 +957,7 @@ export class AiService implements OnModuleInit {
             unreplied.push({
               sessionId: session.id,
               sessionName: session.name,
-              chatId,
+              chatId: neutralChatId,
               contactName,
               senderPhone,
               unreadCount,
@@ -816,8 +1016,9 @@ export class AiService implements OnModuleInit {
 
     // Process each unreplied chat
     for (const item of unrepliedChats) {
-      const cooldownKey = `${item.ruleId}:${item.chatId}`;
-      const dedupeKey = `unreplied_${item.sessionId}_${item.chatId}_${item.lastMessageTimestamp}`;
+      const neutralChatId = toNeutralJid(item.chatId);
+      const cooldownKey = `${item.ruleId}:${neutralChatId}`;
+      const dedupeKey = `unreplied_${item.sessionId}_${neutralChatId}_${item.lastMessageTimestamp}`;
       const now = Date.now();
       const lastSent = this.cooldownTracker.get(cooldownKey) || 0;
 
@@ -826,29 +1027,33 @@ export class AiService implements OnModuleInit {
 
       const cooldownMs = (rule.cooldownSeconds || 10) * 1000;
       if (now - lastSent < cooldownMs) {
-        this.logger.debug(`Skipping unreplied chat ${item.chatId} due to active cooldown`);
+        this.logger.debug(`Skipping unreplied chat ${neutralChatId} due to active cooldown`);
         continue;
       }
 
       if (this.cooldownTracker.has(dedupeKey)) {
-        this.logger.debug(`Skipping unreplied chat ${item.chatId} - already replied to message timestamp ${item.lastMessageTimestamp}`);
+        this.logger.debug(`Skipping unreplied chat ${neutralChatId} - already replied to message timestamp ${item.lastMessageTimestamp}`);
         continue;
       }
 
       this.cooldownTracker.set(cooldownKey, now);
       this.cooldownTracker.set(dedupeKey, now);
+      this.lastProcessedMessageTimestamp.set(`${item.sessionId}:${neutralChatId}`, item.lastMessageTimestamp);
 
       const start = Date.now();
       try {
-        await this.executeAiReply(item.sessionId, rule, item.chatId, item.lastMessageText);
+        await this.executeAiReply(item.sessionId, rule, neutralChatId, item.lastMessageText);
         const engine = this.sessionService.getEngine(item.sessionId);
         if (engine) {
-          await engine.sendSeen(item.chatId).catch(() => undefined);
+          await engine.sendSeen(neutralChatId).catch(() => undefined);
+          if (item.chatId !== neutralChatId) {
+            await engine.sendSeen(item.chatId).catch(() => undefined);
+          }
         }
 
         summary.repliesDispatched++;
         summary.details.push({
-          chatId: item.chatId,
+          chatId: neutralChatId,
           contactName: item.contactName,
           senderPhone: item.senderPhone,
           incomingText: item.lastMessageText,
@@ -858,7 +1063,7 @@ export class AiService implements OnModuleInit {
         });
       } catch (err: any) {
         summary.details.push({
-          chatId: item.chatId,
+          chatId: neutralChatId,
           contactName: item.contactName,
           senderPhone: item.senderPhone,
           incomingText: item.lastMessageText,
