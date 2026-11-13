@@ -62,7 +62,7 @@ export function AiAutoReply() {
   // Form fields
   const [formName, setFormName] = useState('');
   const [formSessionId, setFormSessionId] = useState('*');
-  const [formTriggerType, setFormTriggerType] = useState<AiTriggerType>('all');
+  const [formTriggerType, setFormTriggerType] = useState<AiTriggerType>('specific');
   const [formSpecificNumbers, setFormSpecificNumbers] = useState('');
   const [formCustomKeywords, setFormCustomKeywords] = useState('');
   const [formEndpoint, setFormEndpoint] = useState(DEFAULT_AI_ENDPOINT);
@@ -129,9 +129,9 @@ export function AiAutoReply() {
 
   const openCreateModal = () => {
     setEditingRule(null);
-    setFormName('Customer Auto-Assistant');
+    setFormName('WhatsApp AI Assistant');
     setFormSessionId('*');
-    setFormTriggerType('all');
+    setFormTriggerType('specific');
     setFormSpecificNumbers('');
     setFormCustomKeywords('');
     setFormEndpoint(DEFAULT_AI_ENDPOINT);

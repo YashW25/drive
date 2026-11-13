@@ -195,7 +195,14 @@ export class AiService implements OnModuleInit {
     }
 
     // Clean sender phone number digits (e.g. 919561485909)
-    const senderNumber = (incoming.senderPhone || incoming.author || incoming.from || '').replace(/\D/g, '');
+    let senderNumber = (incoming.senderPhone || incoming.author || incoming.from || '').replace(/\D/g, '');
+    if (incoming.chatId?.includes('@lid') && (!incoming.senderPhone || incoming.senderPhone.includes('@lid') || senderNumber.length > 13)) {
+      const resolved = await this.resolveLidPhone(sessionId, incoming.chatId);
+      if (resolved) {
+        senderNumber = resolved;
+        incoming.senderPhone = resolved;
+      }
+    }
 
     for (const rule of rules) {
       const isMatch = await this.evaluateRuleMatch(sessionId, rule, incoming, senderNumber, body);
@@ -226,6 +233,41 @@ export class AiService implements OnModuleInit {
   }
 
   /**
+   * Resolves an @lid contact or chat ID to a phone number using the engine or database
+   */
+  async resolveLidPhone(sessionId: string, lidOrChatId: string): Promise<string | null> {
+    const rawLid = lidOrChatId.replace(/@.*$/, '').trim();
+    if (!rawLid) return null;
+
+    try {
+      const engine = this.sessionService.getEngine(sessionId);
+      if (engine) {
+        const resolved = await engine.resolveContactPhone(`${rawLid}@lid`);
+        if (resolved) {
+          return resolved.replace(/\D/g, '');
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const isSqlite = this.dataSource.options.type === 'sqlite';
+      const query = isSqlite
+        ? `SELECT phone FROM lid_mappings WHERE lid = ? OR lid = ? LIMIT 1`
+        : `SELECT phone FROM lid_mappings WHERE lid = $1 OR lid = $2 LIMIT 1`;
+      const rows = await this.dataSource.query(query, [rawLid, `${rawLid}@lid`]);
+      if (rows && rows.length > 0 && rows[0].phone) {
+        return String(rows[0].phone).replace(/\D/g, '');
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
+  }
+
+  /**
    * Evaluate whether a rule matches the incoming message criteria
    */
   private async evaluateRuleMatch(
@@ -242,9 +284,34 @@ export class AiService implements OnModuleInit {
       case AiTriggerType.SPECIFIC: {
         const numbers = Array.isArray(rule.specificNumbers) ? rule.specificNumbers : [];
         if (numbers.length === 0) return false;
+
+        let effectiveSender = senderNumber;
+        if (incoming.chatId?.includes('@lid') || senderNumber.length > 13) {
+          const resolved = await this.resolveLidPhone(sessionId, incoming.chatId || senderNumber);
+          if (resolved) {
+            effectiveSender = resolved;
+          }
+        }
+
         return numbers.some(n => {
-          const cleanTarget = n.replace(/\D/g, '');
-          return cleanTarget && (cleanTarget === senderNumber || incoming.chatId.includes(cleanTarget));
+          const raw = n.trim();
+          if (!raw) return false;
+          const cleanTarget = raw.replace(/\D/g, '');
+          if (!cleanTarget) {
+            // Non-numeric target (e.g. contact name or pushName)
+            const pushName = incoming.contact?.pushName || incoming.contact?.name || '';
+            return pushName.toLowerCase().includes(raw.toLowerCase());
+          }
+
+          const numberMatch =
+            cleanTarget === effectiveSender ||
+            cleanTarget === senderNumber ||
+            (cleanTarget.length >= 10 && effectiveSender.endsWith(cleanTarget)) ||
+            (effectiveSender.length >= 10 && cleanTarget.endsWith(effectiveSender));
+
+          const chatIdMatch = incoming.chatId ? incoming.chatId.includes(cleanTarget) : false;
+
+          return numberMatch || chatIdMatch;
         });
       }
 
@@ -596,8 +663,18 @@ export class AiService implements OnModuleInit {
           continue;
         }
 
-        const senderPhone = chatId.replace(/@.*$/, '').replace(/\D/g, '');
-        const contactName = engineChat?.name || senderPhone;
+        let senderPhone = chatId.replace(/@.*$/, '').replace(/\D/g, '');
+        let contactName = engineChat?.name || senderPhone;
+
+        if (chatId.includes('@lid')) {
+          const resolved = await this.resolveLidPhone(session.id, chatId);
+          if (resolved) {
+            senderPhone = resolved;
+            if (!engineChat?.name || engineChat.name === chatId.replace(/@.*$/, '')) {
+              contactName = resolved;
+            }
+          }
+        }
 
         // Match against active rules
         for (const rule of rules) {
@@ -611,6 +688,11 @@ export class AiService implements OnModuleInit {
             fromMe: false,
             isGroup: false,
             type: 'text',
+            senderPhone: senderPhone !== chatId.replace(/@.*$/, '').replace(/\D/g, '') ? senderPhone : undefined,
+            contact: {
+              name: contactName,
+              pushName: contactName,
+            },
           };
 
           const isMatch = await this.evaluateRuleMatch(session.id, rule, dummyIncoming, senderPhone, incomingText);
