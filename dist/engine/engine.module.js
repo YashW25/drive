@@ -14,15 +14,17 @@ const baileys_stored_message_entity_1 = require("./adapters/baileys-stored-messa
 const baileys_message_store_service_1 = require("./adapters/baileys-message-store.service");
 const lid_mapping_entity_1 = require("./identity/lid-mapping.entity");
 const lid_mapping_store_service_1 = require("./identity/lid-mapping-store.service");
+const session_entity_1 = require("../modules/session/entities/session.entity");
+const message_entity_1 = require("../modules/message/entities/message.entity");
 let EngineModule = class EngineModule {
 };
 exports.EngineModule = EngineModule;
 exports.EngineModule = EngineModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([baileys_stored_message_entity_1.BaileysStoredMessage, lid_mapping_entity_1.LidMapping], 'data')],
+        imports: [typeorm_1.TypeOrmModule.forFeature([baileys_stored_message_entity_1.BaileysStoredMessage, lid_mapping_entity_1.LidMapping, session_entity_1.Session, message_entity_1.Message], 'data')],
         providers: [engine_factory_1.EngineFactory, baileys_message_store_service_1.BaileysMessageStoreService, lid_mapping_store_service_1.LidMappingStoreService],
-        exports: [engine_factory_1.EngineFactory, lid_mapping_store_service_1.LidMappingStoreService],
+        exports: [engine_factory_1.EngineFactory, lid_mapping_store_service_1.LidMappingStoreService, baileys_message_store_service_1.BaileysMessageStoreService],
     })
 ], EngineModule);
 //# sourceMappingURL=engine.module.js.map

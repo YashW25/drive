@@ -1523,6 +1523,7 @@ describe('BaileysAdapter contact + chat reads', () => {
       unreadCount: 1,
       timestamp: 1700000010,
       lastMessage: 'hi',
+      lastMessageFromMe: false,
     });
   });
 

@@ -433,6 +433,10 @@ export interface IWhatsAppEngine {
    * engine's native scheme; the adapter decides how to resolve it.
    */
   resolveContactPhone(contactId: string): Promise<string | null>;
+  /**
+   * Best-effort resolution of a phone number to its privacy `@lid` identifier, or `null`.
+   */
+  resolveContactLid?(phone: string): Promise<string | null>;
 
   // Groups - Basic
   getGroups(): Promise<Group[]>;

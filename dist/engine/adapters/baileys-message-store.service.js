@@ -18,6 +18,8 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const baileys_stored_message_entity_1 = require("./baileys-stored-message.entity");
 const logger_service_1 = require("../../common/services/logger.service");
+const session_entity_1 = require("../../modules/session/entities/session.entity");
+const message_entity_1 = require("../../modules/message/entities/message.entity");
 function positiveIntFromEnv(name, fallback) {
     const parsed = Number.parseInt(process.env[name] ?? '', 10);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -36,51 +38,111 @@ function isMissingParentSessionError(err) {
 }
 let BaileysMessageStoreService = class BaileysMessageStoreService {
     repo;
+    sessionRepo;
+    messageRepo;
     logger = (0, logger_service_1.createLogger)('BaileysMessageStore');
     orphanWarnedSessions = new Set();
     baileysLib;
     async loadLib() {
         return (this.baileysLib ??= await import('@whiskeysockets/baileys'));
     }
-    constructor(repo) {
+    constructor(repo, sessionRepo, messageRepo) {
         this.repo = repo;
+        this.sessionRepo = sessionRepo;
+        this.messageRepo = messageRepo;
+    }
+    async resolveSessionId(sessionId) {
+        if (this.sessionRepo) {
+            try {
+                const s = await this.sessionRepo.findOne({
+                    where: [{ id: sessionId }, { name: sessionId }],
+                    select: ['id'],
+                });
+                if (s?.id) {
+                    return s.id;
+                }
+            }
+            catch {
+            }
+        }
+        return sessionId;
     }
     async put(sessionId, msg) {
         const waMessageId = msg.key?.id;
         if (!waMessageId) {
             return;
         }
+        const resolvedSessionId = await this.resolveSessionId(sessionId);
         const { BufferJSON } = await this.loadLib();
         const serializedMessage = JSON.stringify(msg, BufferJSON.replacer);
         try {
-            await this.repo.upsert({ sessionId, waMessageId, serializedMessage, createdAt: new Date() }, [
-                'sessionId',
-                'waMessageId',
-            ]);
+            await this.repo.upsert({ sessionId: resolvedSessionId, waMessageId, serializedMessage, createdAt: new Date() }, ['sessionId', 'waMessageId']);
         }
         catch (err) {
             if (isMissingParentSessionError(err)) {
-                if (!this.orphanWarnedSessions.has(sessionId)) {
-                    this.orphanWarnedSessions.add(sessionId);
-                    this.logger.warn(`No parent session row for "${sessionId}" — skipping Baileys message store (orphaned/recreated session). ` +
+                if (!this.orphanWarnedSessions.has(resolvedSessionId)) {
+                    this.orphanWarnedSessions.add(resolvedSessionId);
+                    this.logger.warn(`No parent session row for "${resolvedSessionId}" — skipping Baileys message store (orphaned/recreated session). ` +
                         `reply/forward/react/delete-by-id will be unavailable for messages received under this id.`);
                 }
                 return;
             }
             throw err;
         }
-        await this.enforceLimit(sessionId);
+        await this.enforceLimit(resolvedSessionId);
     }
     async getMessage(sessionId, messageId) {
-        const row = await this.repo.findOne({ where: { sessionId, waMessageId: messageId } });
-        if (!row) {
-            return null;
-        }
+        const resolvedSessionId = await this.resolveSessionId(sessionId);
+        const row = await this.repo.findOne({
+            where: [
+                { sessionId: resolvedSessionId, waMessageId: messageId },
+                { sessionId, waMessageId: messageId },
+            ],
+        });
         const { BufferJSON } = await this.loadLib();
-        return JSON.parse(row.serializedMessage, BufferJSON.reviver);
+        if (row?.serializedMessage) {
+            try {
+                return JSON.parse(row.serializedMessage, BufferJSON.reviver);
+            }
+            catch {
+            }
+        }
+        if (this.messageRepo) {
+            try {
+                const msgEntity = await this.messageRepo.findOne({
+                    where: [
+                        { sessionId: resolvedSessionId, waMessageId: messageId },
+                        { sessionId, waMessageId: messageId },
+                        { sessionId: resolvedSessionId, id: messageId },
+                        { sessionId, id: messageId },
+                    ],
+                });
+                if (msgEntity && msgEntity.body) {
+                    return {
+                        key: {
+                            id: msgEntity.waMessageId || msgEntity.id,
+                            remoteJid: msgEntity.chatId,
+                            fromMe: msgEntity.direction === message_entity_1.MessageDirection.OUTGOING,
+                        },
+                        messageTimestamp: Math.floor(new Date(msgEntity.createdAt).getTime() / 1000),
+                        message: {
+                            conversation: msgEntity.body,
+                            extendedTextMessage: { text: msgEntity.body },
+                        },
+                    };
+                }
+            }
+            catch {
+            }
+        }
+        return null;
     }
     async clearSession(sessionId) {
-        await this.repo.delete({ sessionId });
+        const resolvedSessionId = await this.resolveSessionId(sessionId);
+        await this.repo.delete({ sessionId: resolvedSessionId });
+        if (resolvedSessionId !== sessionId) {
+            await this.repo.delete({ sessionId });
+        }
     }
     async enforceLimit(sessionId) {
         const limit = positiveIntFromEnv('BAILEYS_MESSAGE_STORE_LIMIT', 5000);
@@ -107,6 +169,12 @@ exports.BaileysMessageStoreService = BaileysMessageStoreService;
 exports.BaileysMessageStoreService = BaileysMessageStoreService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(baileys_stored_message_entity_1.BaileysStoredMessage, 'data')),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __param(1, (0, common_1.Optional)()),
+    __param(1, (0, typeorm_1.InjectRepository)(session_entity_1.Session, 'data')),
+    __param(2, (0, common_1.Optional)()),
+    __param(2, (0, typeorm_1.InjectRepository)(message_entity_1.Message, 'data')),
+    __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository])
 ], BaileysMessageStoreService);
 //# sourceMappingURL=baileys-message-store.service.js.map

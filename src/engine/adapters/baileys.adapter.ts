@@ -147,8 +147,12 @@ export class BaileysAdapter implements IWhatsAppEngine {
 
   constructor(private readonly config: BaileysAdapterConfig) {
     this.authStorageProvider = config.authStorageProvider ?? (() => {
-      const { SupabasePgAuthStorageProvider } = require('../storage/supabase-pg-auth-storage.provider');
-      return new SupabasePgAuthStorageProvider();
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        const { SupabasePgAuthStorageProvider } = require('../storage/supabase-pg-auth-storage.provider');
+        return new SupabasePgAuthStorageProvider();
+      }
+      const { FileAuthStorageProvider } = require('../storage/file-auth-storage.service');
+      return new FileAuthStorageProvider(config.authDir);
     })();
     this.sessionStore = new BaileysSessionStore(config.lidMappingStore, config.sessionId);
     if (config.proxyUrl) {
@@ -335,6 +339,14 @@ export class BaileysAdapter implements IWhatsAppEngine {
       this.callbacks.onReady?.(this.phoneNumber ?? '', this.pushName ?? '');
       // Backfill names the initial sync skipped (see hydrateNames).
       void this.hydrateNames();
+      // Ensure server pre-keys are maintained so incoming ratchets do not get closed
+      void (async () => {
+        try {
+          await (this.sock as any)?.uploadPreKeysToServerIfRequired?.();
+        } catch (err) {
+          this.logger.debug('Pre-key upload check notice', { error: String(err) });
+        }
+      })();
     }
 
     if (connection === 'close') {
@@ -521,10 +533,24 @@ export class BaileysAdapter implements IWhatsAppEngine {
     this.ensureReady();
     const results = await this.sock!.onWhatsApp(number);
     const hit = results?.[0];
+    if (hit?.exists && (hit as any).lid) {
+      this.sessionStore.addLidMappings([{ lid: (hit as any).lid, pn: hit.jid }]);
+    }
     // Baileys returns a raw `<phone>@s.whatsapp.net`; neutralize it before it crosses the engine
     // boundary so the value matches whatsapp-web.js (`<phone>@c.us`) and the IWhatsAppEngine contract
     // (no raw `@s.whatsapp.net` in a neutral field). It also round-trips back to a send on either engine.
     return hit?.exists ? this.sessionStore.toNeutralJid(hit.jid) : null;
+  }
+
+  async resolveContactLid(phone: string): Promise<string | null> {
+    this.ensureReady();
+    const results = await this.sock!.onWhatsApp(phone);
+    const hit = results?.[0];
+    if (hit?.exists && (hit as any).lid) {
+      this.sessionStore.addLidMappings([{ lid: (hit as any).lid, pn: hit.jid }]);
+      return (hit as any).lid;
+    }
+    return null;
   }
 
   async sendChatState(chatId: string, state: ChatState): Promise<void> {
@@ -1182,6 +1208,10 @@ export class BaileysAdapter implements IWhatsAppEngine {
       // Seed the chat's last-message preview + sort time (newest wins); else history-only chats
       // would read "No messages yet".
       this.sessionStore.recordMessage(msg);
+      if (msg.key?.id && msg.message) {
+        this.rememberMessage(msg.key.id, msg.message);
+        void this.config.messageStore?.put(this.config.sessionId, msg).catch(() => undefined);
+      }
       const incoming = this.mapHistoryMessage(msg);
       if (incoming) {
         mapped.push(incoming);

@@ -293,6 +293,35 @@ export class AiService implements OnModuleInit {
           }
         }
 
+        // If effectiveSender is still an unresolved lid, attempt proactive resolution via engine
+        const isLid = incoming.chatId?.includes('@lid') || (incoming.from && incoming.from.includes('@lid'));
+        const incomingLid = (incoming.chatId?.includes('@lid') ? incoming.chatId : incoming.from || '')
+          .replace(/@.*$/, '')
+          .trim();
+
+        if (isLid && effectiveSender.length > 13) {
+          try {
+            const engine = this.sessionService.getEngine(sessionId);
+            if (engine && typeof (engine as any).resolveContactLid === 'function') {
+              for (const n of numbers) {
+                const clean = n.replace(/\D/g, '');
+                if (clean.length >= 10) {
+                  const resolvedLid = await (engine as any).resolveContactLid(clean);
+                  if (
+                    resolvedLid &&
+                    (resolvedLid.includes(incomingLid) || incomingLid.includes(resolvedLid.replace(/@.*$/, '')))
+                  ) {
+                    effectiveSender = clean;
+                    break;
+                  }
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         return numbers.some(n => {
           const raw = n.trim();
           if (!raw) return false;

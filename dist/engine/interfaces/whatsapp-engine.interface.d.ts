@@ -266,6 +266,7 @@ export interface IWhatsAppEngine {
     checkNumberExists(number: string): Promise<boolean>;
     getNumberId(number: string): Promise<string | null>;
     resolveContactPhone(contactId: string): Promise<string | null>;
+    resolveContactLid?(phone: string): Promise<string | null>;
     getGroups(): Promise<Group[]>;
     getGroupInfo(groupId: string): Promise<GroupInfo | null>;
     createGroup(name: string, participants: string[]): Promise<Group>;

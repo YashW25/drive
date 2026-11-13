@@ -120,8 +120,12 @@ class BaileysAdapter {
     constructor(config) {
         this.config = config;
         this.authStorageProvider = config.authStorageProvider ?? (() => {
-            const { SupabasePgAuthStorageProvider } = require('../storage/supabase-pg-auth-storage.provider');
-            return new SupabasePgAuthStorageProvider();
+            if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+                const { SupabasePgAuthStorageProvider } = require('../storage/supabase-pg-auth-storage.provider');
+                return new SupabasePgAuthStorageProvider();
+            }
+            const { FileAuthStorageProvider } = require('../storage/file-auth-storage.service');
+            return new FileAuthStorageProvider(config.authDir);
         })();
         this.sessionStore = new baileys_session_store_1.BaileysSessionStore(config.lidMappingStore, config.sessionId);
         if (config.proxyUrl) {
@@ -274,6 +278,14 @@ class BaileysAdapter {
             this.setStatus(whatsapp_engine_interface_1.EngineStatus.READY);
             this.callbacks.onReady?.(this.phoneNumber ?? '', this.pushName ?? '');
             void this.hydrateNames();
+            void (async () => {
+                try {
+                    await this.sock?.uploadPreKeysToServerIfRequired?.();
+                }
+                catch (err) {
+                    this.logger.debug('Pre-key upload check notice', { error: String(err) });
+                }
+            })();
         }
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output
@@ -420,7 +432,20 @@ class BaileysAdapter {
         this.ensureReady();
         const results = await this.sock.onWhatsApp(number);
         const hit = results?.[0];
+        if (hit?.exists && hit.lid) {
+            this.sessionStore.addLidMappings([{ lid: hit.lid, pn: hit.jid }]);
+        }
         return hit?.exists ? this.sessionStore.toNeutralJid(hit.jid) : null;
+    }
+    async resolveContactLid(phone) {
+        this.ensureReady();
+        const results = await this.sock.onWhatsApp(phone);
+        const hit = results?.[0];
+        if (hit?.exists && hit.lid) {
+            this.sessionStore.addLidMappings([{ lid: hit.lid, pn: hit.jid }]);
+            return hit.lid;
+        }
+        return null;
     }
     async sendChatState(chatId, state) {
         this.ensureReady();
@@ -926,6 +951,10 @@ class BaileysAdapter {
                 }
             }
             this.sessionStore.recordMessage(msg);
+            if (msg.key?.id && msg.message) {
+                this.rememberMessage(msg.key.id, msg.message);
+                void this.config.messageStore?.put(this.config.sessionId, msg).catch(() => undefined);
+            }
             const incoming = this.mapHistoryMessage(msg);
             if (incoming) {
                 mapped.push(incoming);

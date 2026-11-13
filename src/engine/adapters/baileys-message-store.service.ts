@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type * as BaileysLib from '@whiskeysockets/baileys';
@@ -6,18 +6,14 @@ import type { WAMessage } from '@whiskeysockets/baileys';
 import { BaileysStoredMessage } from './baileys-stored-message.entity';
 import { BaileysMessageStore } from '../types/baileys.types';
 import { createLogger } from '../../common/services/logger.service';
+import { Session } from '../../modules/session/entities/session.entity';
+import { Message, MessageDirection } from '../../modules/message/entities/message.entity';
 
 function positiveIntFromEnv(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? '', 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/**
- * True when a write failed because the parent `sessions` row is absent (a foreign-key violation),
- * as opposed to any other persistence error. Covers SQLite (`SQLITE_CONSTRAINT[_FOREIGNKEY]`) and
- * Postgres (`23503`). TypeORM wraps the driver error in a QueryFailedError, so check both the
- * wrapper and `driverError`.
- */
 function isMissingParentSessionError(err: unknown): boolean {
   const e = err as { code?: string; driverError?: { code?: string }; message?: string };
   const code = e?.driverError?.code ?? e?.code;
@@ -47,36 +43,51 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
   constructor(
     @InjectRepository(BaileysStoredMessage, 'data')
     private readonly repo: Repository<BaileysStoredMessage>,
+    @Optional()
+    @InjectRepository(Session, 'data')
+    private readonly sessionRepo?: Repository<Session>,
+    @Optional()
+    @InjectRepository(Message, 'data')
+    private readonly messageRepo?: Repository<Message>,
   ) {}
+
+  private async resolveSessionId(sessionId: string): Promise<string> {
+    if (this.sessionRepo) {
+      try {
+        const s = await this.sessionRepo.findOne({
+          where: [{ id: sessionId }, { name: sessionId }],
+          select: ['id'],
+        });
+        if (s?.id) {
+          return s.id;
+        }
+      } catch {
+        // Fall back to provided sessionId
+      }
+    }
+    return sessionId;
+  }
 
   async put(sessionId: string, msg: WAMessage): Promise<void> {
     const waMessageId = msg.key?.id;
     if (!waMessageId) {
       return;
     }
+    const resolvedSessionId = await this.resolveSessionId(sessionId);
     const { BufferJSON } = await this.loadLib();
     const serializedMessage = JSON.stringify(msg, BufferJSON.replacer);
-    // Idempotent: the same message arrives from the send return AND the messages.upsert echo.
-    // createdAt is set explicitly so the stored value carries millisecond precision — matching the
-    // :createdAt bound param used in enforceLimit(). Without this, SQLite's datetime('now') stores
-    // second-precision (e.g. '…:11') while the JS Date bound serializes as '…:11.000', and SQLite
-    // string-compares '…:11' < '…:11.000' = TRUE, causing every same-second row to be over-evicted
-    // and the store to be wiped to ~0.
+
     try {
-      await this.repo.upsert({ sessionId, waMessageId, serializedMessage, createdAt: new Date() }, [
-        'sessionId',
-        'waMessageId',
-      ]);
+      await this.repo.upsert(
+        { sessionId: resolvedSessionId, waMessageId, serializedMessage, createdAt: new Date() },
+        ['sessionId', 'waMessageId'],
+      );
     } catch (err) {
       if (isMissingParentSessionError(err)) {
-        // Orphaned adapter: the sessions row was deleted/recreated (reconnect churn) while this
-        // adapter kept emitting messages.upsert. There is no valid parent to store under, so drop
-        // the write instead of throwing the FK error on every message (#319). Warn once per session
-        // so the orphan stays visible without per-message log noise.
-        if (!this.orphanWarnedSessions.has(sessionId)) {
-          this.orphanWarnedSessions.add(sessionId);
+        if (!this.orphanWarnedSessions.has(resolvedSessionId)) {
+          this.orphanWarnedSessions.add(resolvedSessionId);
           this.logger.warn(
-            `No parent session row for "${sessionId}" — skipping Baileys message store (orphaned/recreated session). ` +
+            `No parent session row for "${resolvedSessionId}" — skipping Baileys message store (orphaned/recreated session). ` +
               `reply/forward/react/delete-by-id will be unavailable for messages received under this id.`,
           );
         }
@@ -84,20 +95,66 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
       }
       throw err; // a genuine persistence failure — let the adapter's catch surface it
     }
-    await this.enforceLimit(sessionId);
+    await this.enforceLimit(resolvedSessionId);
   }
 
   async getMessage(sessionId: string, messageId: string): Promise<WAMessage | null> {
-    const row = await this.repo.findOne({ where: { sessionId, waMessageId: messageId } });
-    if (!row) {
-      return null;
-    }
+    const resolvedSessionId = await this.resolveSessionId(sessionId);
+    const row = await this.repo.findOne({
+      where: [
+        { sessionId: resolvedSessionId, waMessageId: messageId },
+        { sessionId, waMessageId: messageId },
+      ],
+    });
+
     const { BufferJSON } = await this.loadLib();
-    return JSON.parse(row.serializedMessage, BufferJSON.reviver) as WAMessage;
+    if (row?.serializedMessage) {
+      try {
+        return JSON.parse(row.serializedMessage, BufferJSON.reviver) as WAMessage;
+      } catch {
+        // fall through to fallback
+      }
+    }
+
+    // Fall back to neutral messages table for retry re-encryption
+    if (this.messageRepo) {
+      try {
+        const msgEntity = await this.messageRepo.findOne({
+          where: [
+            { sessionId: resolvedSessionId, waMessageId: messageId },
+            { sessionId, waMessageId: messageId },
+            { sessionId: resolvedSessionId, id: messageId },
+            { sessionId, id: messageId },
+          ],
+        });
+        if (msgEntity && msgEntity.body) {
+          return {
+            key: {
+              id: msgEntity.waMessageId || msgEntity.id,
+              remoteJid: msgEntity.chatId,
+              fromMe: msgEntity.direction === MessageDirection.OUTGOING,
+            },
+            messageTimestamp: Math.floor(new Date(msgEntity.createdAt).getTime() / 1000),
+            message: {
+              conversation: msgEntity.body,
+              extendedTextMessage: { text: msgEntity.body },
+            },
+          } as unknown as WAMessage;
+        }
+      } catch {
+        // ignore fallback error
+      }
+    }
+
+    return null;
   }
 
   async clearSession(sessionId: string): Promise<void> {
-    await this.repo.delete({ sessionId });
+    const resolvedSessionId = await this.resolveSessionId(sessionId);
+    await this.repo.delete({ sessionId: resolvedSessionId });
+    if (resolvedSessionId !== sessionId) {
+      await this.repo.delete({ sessionId });
+    }
   }
 
   /** Per-session row cap: keep the newest N, delete the rest. Deterministic via (createdAt, id). */

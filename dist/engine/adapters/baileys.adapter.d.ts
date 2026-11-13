@@ -41,6 +41,7 @@ export declare class BaileysAdapter implements IWhatsAppEngine {
     sendTextMessage(chatId: string, text: string): Promise<MessageResult>;
     checkNumberExists(number: string): Promise<boolean>;
     getNumberId(number: string): Promise<string | null>;
+    resolveContactLid(phone: string): Promise<string | null>;
     sendChatState(chatId: string, state: ChatState): Promise<void>;
     sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult>;
     sendVideoMessage(chatId: string, media: MediaInput): Promise<MessageResult>;
