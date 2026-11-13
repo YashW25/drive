@@ -428,6 +428,25 @@ export function AiAutoReply() {
   const allImportSelected =
     importModalContacts.length > 0 && importModalContacts.every((c) => c.selected);
 
+  const handleQuickRemoveContact = async (rule: AiAutoReplyRule, targetEntry: string) => {
+    const parsedTarget = deserializeRuleNumbers([targetEntry])[0];
+    const targetPhone = parsedTarget?.phone || targetEntry.replace(/\D/g, '');
+    const updatedNumbers = (rule.specificNumbers || []).filter((entry) => {
+      const p = deserializeRuleNumbers([entry])[0];
+      const phone = p?.phone || entry.replace(/\D/g, '');
+      return phone !== targetPhone;
+    });
+
+    try {
+      await updateMutation.mutateAsync({
+        id: rule.id,
+        data: { specificNumbers: updatedNumbers },
+      });
+    } catch (err) {
+      console.error('Failed to remove contact from rule:', err);
+    }
+  };
+
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) return;
@@ -786,17 +805,30 @@ export function AiAutoReply() {
                     {rule.triggerType === 'specific' && rule.specificNumbers?.length > 0 && (
                       <div className="filter-chips">
                         <span className="chip-label">Target Contacts ({rule.specificNumbers.length}):</span>
-                        {rule.specificNumbers.slice(0, 6).map((num, i) => {
+                        {rule.specificNumbers.slice(0, 8).map((num, i) => {
                           const parsed = deserializeRuleNumbers([num])[0];
                           return (
-                            <span key={i} className="filter-chip">
-                              {parsed?.name ? `${parsed.name} (+${parsed.phone})` : `+${parsed?.phone || num}`}
+                            <span key={i} className="filter-chip contact-chip">
+                              <span>
+                                {parsed?.name ? `${parsed.name} (+${parsed.phone})` : `+${parsed?.phone || num}`}
+                              </span>
+                              <button
+                                type="button"
+                                className="chip-remove-btn"
+                                title={`Remove ${parsed?.name || parsed?.phone || num} from rule`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleQuickRemoveContact(rule, num);
+                                }}
+                              >
+                                <X size={11} />
+                              </button>
                             </span>
                           );
                         })}
-                        {rule.specificNumbers.length > 6 && (
+                        {rule.specificNumbers.length > 8 && (
                           <span className="filter-chip more-chip">
-                            +{rule.specificNumbers.length - 6} more
+                            +{rule.specificNumbers.length - 8} more
                           </span>
                         )}
                       </div>
@@ -1253,7 +1285,7 @@ export function AiAutoReply() {
                                 <input
                                   type="text"
                                   className="edit-name-input"
-                                  placeholder="Name"
+                                  placeholder="Contact Name"
                                   value={editNameVal}
                                   onChange={(e) => setEditNameVal(e.target.value)}
                                   onKeyDown={(e) => {
@@ -1266,7 +1298,7 @@ export function AiAutoReply() {
                                 <input
                                   type="text"
                                   className="edit-phone-input"
-                                  placeholder="Phone"
+                                  placeholder="Phone Number"
                                   value={editPhoneVal}
                                   onChange={(e) => setEditPhoneVal(e.target.value)}
                                   onKeyDown={(e) => {
@@ -1278,19 +1310,21 @@ export function AiAutoReply() {
                                 />
                                 <button
                                   type="button"
-                                  className="btn-icon-sm btn-save-contact"
+                                  className="btn-contact-save"
                                   onClick={handleSaveInlineEdit}
                                   title="Save changes"
                                 >
-                                  <Check size={14} />
+                                  <Check size={13} />
+                                  <span>Save</span>
                                 </button>
                                 <button
                                   type="button"
-                                  className="btn-icon-sm"
+                                  className="btn-contact-cancel"
                                   onClick={() => setEditingContactId(null)}
                                   title="Cancel"
                                 >
-                                  <X size={14} />
+                                  <X size={13} />
+                                  <span>Cancel</span>
                                 </button>
                               </div>
                             ) : (
@@ -1315,19 +1349,21 @@ export function AiAutoReply() {
                                 <div className="contact-actions-col">
                                   <button
                                     type="button"
-                                    className="btn-icon-sm"
+                                    className="btn-contact-action-edit"
                                     onClick={() => handleStartInlineEdit(contact)}
-                                    title="Edit contact"
+                                    title="Edit contact name or phone"
                                   >
                                     <Edit size={13} />
+                                    <span>Edit</span>
                                   </button>
                                   <button
                                     type="button"
-                                    className="btn-icon-sm danger"
+                                    className="btn-contact-action-remove"
                                     onClick={() => handleRemoveContact(contact.id)}
-                                    title="Remove from whitelist"
+                                    title="Remove this contact from rule whitelist"
                                   >
                                     <Trash2 size={13} />
+                                    <span>Remove</span>
                                   </button>
                                 </div>
                               </>

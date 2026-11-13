@@ -1087,48 +1087,84 @@
 .ai-auto-reply-page .contact-actions-col {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.ai-auto-reply-page .btn-contact-action-remove {
+  display: inline-flex;
+  align-items: center;
   gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.ai-auto-reply-page .btn-contact-action-remove:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.ai-auto-reply-page .btn-contact-action-remove svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
   flex-shrink: 0;
 }
 
-.ai-auto-reply-page .btn-icon-sm {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-secondary, #94a3b8);
-  border-radius: 4px;
-  width: 26px;
-  height: 26px;
-  display: flex;
+.ai-auto-reply-page .btn-contact-action-edit {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #60a5fa;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
-.ai-auto-reply-page .btn-icon-sm:hover {
-  background: var(--bg-white, #1e293b);
-  border-color: var(--border, #334155);
-  color: var(--text-primary, #f8fafc);
+.ai-auto-reply-page .btn-contact-action-edit:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #60a5fa;
+  color: #93c5fd;
+  transform: translateY(-1px);
 }
 
-.ai-auto-reply-page .btn-icon-sm.danger:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
+.ai-auto-reply-page .btn-contact-action-edit svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  flex-shrink: 0;
 }
 
 .ai-auto-reply-page .contact-inline-edit {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   width: 100%;
 }
 
 .ai-auto-reply-page .edit-name-input {
   flex: 1;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   font-size: 0.8125rem;
-  border-radius: 4px;
+  border-radius: 6px;
   border: 1px solid var(--border, #334155);
   background: var(--bg-white, #1e293b);
   color: var(--text-primary, #f8fafc);
@@ -1137,19 +1173,78 @@
 
 .ai-auto-reply-page .edit-phone-input {
   flex: 1.2;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   font-size: 0.8125rem;
-  border-radius: 4px;
+  border-radius: 6px;
   border: 1px solid var(--border, #334155);
   background: var(--bg-white, #1e293b);
   color: var(--text-primary, #f8fafc);
   outline: none;
 }
 
-.ai-auto-reply-page .btn-save-contact {
+.ai-auto-reply-page .btn-contact-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.75rem;
   background: rgba(34, 197, 94, 0.2);
-  border-color: rgba(34, 197, 94, 0.4);
+  border: 1px solid rgba(34, 197, 94, 0.4);
   color: #4ade80;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ai-auto-reply-page .btn-contact-save:hover {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.ai-auto-reply-page .btn-contact-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.75rem;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid var(--border, #334155);
+  color: var(--text-secondary, #94a3b8);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ai-auto-reply-page .btn-contact-cancel:hover {
+  background: var(--bg-white, #1e293b);
+  color: var(--text-primary, #f8fafc);
+}
+
+.ai-auto-reply-page .filter-chip.contact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-right: 0.3rem;
+}
+
+.ai-auto-reply-page .chip-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.ai-auto-reply-page .chip-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #f87171;
 }
 
 /* =============================================================================
