@@ -7,6 +7,8 @@ import {
   OnModuleInit,
   OnApplicationBootstrap,
 } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, In, Not, IsNull, DataSource, FindManyOptions } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
@@ -34,6 +36,15 @@ import {
   deliveryStatusToAck,
   ackStatusTransitionFrom,
 } from '../message/message-status.util';
+
+export interface AutoRefreshConfig {
+  enabled: boolean;
+  intervalHours: number;
+  mode: 'sessions' | 'service';
+  lastRefreshAt: string | null;
+  nextRefreshAt: string | null;
+  totalRefreshesDone: number;
+}
 
 interface ReconnectState {
   attempts: number;
@@ -122,6 +133,18 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
   // same snapshot, both full-row save, last writer wins). Entries are deleted once their chain drains.
   private reactionChains: Map<string, Promise<void>> = new Map();
 
+  // Automatic Scheduled Refreshment state
+  private refreshConfig: AutoRefreshConfig = {
+    enabled: true,
+    intervalHours: 12,
+    mode: 'sessions',
+    lastRefreshAt: null,
+    nextRefreshAt: null,
+    totalRefreshesDone: 0,
+  };
+  private autoRefreshTimer: NodeJS.Timeout | null = null;
+  private readonly configFilePath = path.join(process.cwd(), 'data', 'auto-refresh.json');
+
   constructor(
     @InjectRepository(Session, 'data')
     private readonly sessionRepository: Repository<Session>,
@@ -161,6 +184,10 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
   }
 
   async onApplicationBootstrap(): Promise<void> {
+    // 1. Initialize Scheduled Refreshment
+    this.loadRefreshConfig();
+    this.scheduleAutoRefresh();
+
     if (process.env.AUTO_START_SESSIONS !== 'true') return;
 
     const sessions = await this.sessionRepository.find({
@@ -197,6 +224,11 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.autoRefreshTimer) {
+      clearTimeout(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+
     // Stop reconnect timers FIRST so nothing reschedules mid-teardown, and so this always runs even
     // if an engine.destroy() below hangs or throws.
     for (const [, state] of this.reconnectStates) {
@@ -432,6 +464,194 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
       return this.findOne(id);
     } finally {
       this.initializingSessions.delete(id);
+    }
+  }
+
+  /**
+   * Refresh / Restart a specific session without changing its session ID or deleting credentials.
+   * Gracefully tears down the existing engine (browser/socket), resets state, and re-initializes.
+   */
+  async restart(id: string): Promise<Session> {
+    const session = await this.findOne(id);
+    this.logger.log(`Refreshing WhatsApp session: ${session.name} (${id})`, {
+      sessionId: id,
+      action: 'session_restart',
+    });
+
+    // 1. Cancel any active reconnect backoff timers
+    this.cancelReconnect(id);
+
+    // 2. Tear down old engine cleanly to release socket/browser resources
+    const oldEngine = this.engines.get(id);
+    if (oldEngine) {
+      await this.teardownEngineSafely(id, oldEngine, e => e.destroy(), 'destroy');
+      this.engines.delete(id);
+    }
+
+    // 3. Clear stopping / initializing flags
+    this.stoppingSessions.delete(id);
+    this.initializingSessions.delete(id);
+
+    // 4. Update status to INITIALIZING
+    await this.updateStatus(id, SessionStatus.INITIALIZING);
+
+    // 5. Re-initialize the engine with the exact same ID & credentials
+    const { maxAttempts, baseDelay } = resolveReconnectConfig(session.config);
+    this.reconnectStates.set(id, { attempts: 0, timer: null, maxAttempts, baseDelay });
+
+    await this.initializeEngine(id, session);
+    return this.findOne(id);
+  }
+
+  /**
+   * Refresh all authenticated / active WhatsApp sessions or restart the service.
+   * Keeps existing session IDs and resumes logged-in accounts automatically.
+   */
+  async refreshAll(mode: 'sessions' | 'service' = 'sessions'): Promise<{
+    message: string;
+    mode: string;
+    total: number;
+    refreshed: string[];
+    timestamp: string;
+  }> {
+    const allSessions = await this.sessionRepository.find();
+    // Refresh sessions that are currently logged in or active
+    const targetSessions = allSessions.filter(s =>
+      s.status === SessionStatus.READY ||
+      s.status === SessionStatus.AUTHENTICATING ||
+      s.status === SessionStatus.INITIALIZING ||
+      s.status === SessionStatus.QR_READY ||
+      (s.phone && s.status !== SessionStatus.CREATED)
+    );
+
+    this.logger.log(`Executing WhatsApp refreshment for ${targetSessions.length} session(s) with mode '${mode}'`);
+
+    if (mode === 'service') {
+      this.logger.warn('Full service restart triggered. Container will reboot and automatically reconnect previous sessions.');
+      this.refreshConfig.lastRefreshAt = new Date().toISOString();
+      this.refreshConfig.totalRefreshesDone = (this.refreshConfig.totalRefreshesDone || 0) + 1;
+      this.saveRefreshConfig();
+
+      setTimeout(() => {
+        process.exit(0);
+      }, 1500);
+
+      return {
+        message: 'Full service restart initiated. Container will reboot and automatically restore all logged-in sessions.',
+        mode: 'service',
+        total: targetSessions.length,
+        refreshed: targetSessions.map(s => s.name),
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const refreshed: string[] = [];
+    for (const session of targetSessions) {
+      try {
+        await this.restart(session.id);
+        refreshed.push(session.name);
+        await this.delay(1500);
+      } catch (err: unknown) {
+        this.logger.error(`Error refreshing session ${session.name}:`, err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    this.refreshConfig.lastRefreshAt = new Date().toISOString();
+    this.refreshConfig.totalRefreshesDone = (this.refreshConfig.totalRefreshesDone || 0) + 1;
+    this.saveRefreshConfig();
+    this.scheduleAutoRefresh();
+
+    return {
+      message: `Refreshed ${refreshed.length} active session(s) successfully without changing session IDs.`,
+      mode: 'sessions',
+      total: targetSessions.length,
+      refreshed,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  getRefreshConfig(): AutoRefreshConfig {
+    return { ...this.refreshConfig };
+  }
+
+  updateRefreshConfig(update: Partial<AutoRefreshConfig>): AutoRefreshConfig {
+    if (typeof update.enabled === 'boolean') {
+      this.refreshConfig.enabled = update.enabled;
+    }
+    if (typeof update.intervalHours === 'number' && update.intervalHours > 0) {
+      this.refreshConfig.intervalHours = Math.max(1, Math.min(168, update.intervalHours));
+    }
+    if (update.mode === 'sessions' || update.mode === 'service') {
+      this.refreshConfig.mode = update.mode;
+    }
+
+    this.saveRefreshConfig();
+    this.scheduleAutoRefresh();
+    this.logger.log(`Auto-refresh configuration updated: enabled=${this.refreshConfig.enabled}, interval=${this.refreshConfig.intervalHours}h, mode=${this.refreshConfig.mode}`);
+
+    return { ...this.refreshConfig };
+  }
+
+  private loadRefreshConfig(): void {
+    try {
+      if (fs.existsSync(this.configFilePath)) {
+        const raw = fs.readFileSync(this.configFilePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        this.refreshConfig = {
+          enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : true,
+          intervalHours: typeof parsed.intervalHours === 'number' && parsed.intervalHours > 0 ? parsed.intervalHours : 12,
+          mode: parsed.mode === 'service' ? 'service' : 'sessions',
+          lastRefreshAt: parsed.lastRefreshAt || null,
+          nextRefreshAt: parsed.nextRefreshAt || null,
+          totalRefreshesDone: typeof parsed.totalRefreshesDone === 'number' ? parsed.totalRefreshesDone : 0,
+        };
+      } else {
+        this.saveRefreshConfig();
+      }
+    } catch (err) {
+      this.logger.error('Failed to load auto-refresh configuration, using defaults', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private saveRefreshConfig(): void {
+    try {
+      const dir = path.dirname(this.configFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(this.configFilePath, JSON.stringify(this.refreshConfig, null, 2), 'utf8');
+    } catch (err) {
+      this.logger.error('Failed to save auto-refresh configuration', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private scheduleAutoRefresh(): void {
+    if (this.autoRefreshTimer) {
+      clearTimeout(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+
+    if (!this.refreshConfig.enabled || this.refreshConfig.intervalHours <= 0) {
+      this.refreshConfig.nextRefreshAt = null;
+      return;
+    }
+
+    const intervalMs = this.refreshConfig.intervalHours * 3600 * 1000;
+    this.refreshConfig.nextRefreshAt = new Date(Date.now() + intervalMs).toISOString();
+
+    this.logger.log(`[AutoRefresh] Scheduled next WhatsApp refreshment in ${this.refreshConfig.intervalHours} hour(s) at ${this.refreshConfig.nextRefreshAt}`);
+
+    this.autoRefreshTimer = setTimeout(async () => {
+      this.logger.log(`[AutoRefresh] Interval triggered (${this.refreshConfig.intervalHours}h). Executing scheduled WhatsApp refreshment...`);
+      try {
+        await this.refreshAll(this.refreshConfig.mode);
+      } catch (err) {
+        this.logger.error('[AutoRefresh] Scheduled refreshment encountered an error:', err instanceof Error ? err.message : String(err));
+      }
+    }, intervalMs);
+
+    if (this.autoRefreshTimer && typeof (this.autoRefreshTimer as any).unref === 'function') {
+      (this.autoRefreshTimer as any).unref();
     }
   }
 

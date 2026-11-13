@@ -73,6 +73,44 @@ export function useSessionChatsQuery(sessionId: string, enabled: boolean) {
   });
 }
 
+export function useRefreshConfigQuery() {
+  return useQuery({
+    queryKey: ['sessions', 'refresh-config'],
+    queryFn: sessionApi.getRefreshConfig,
+    staleTime: 30_000,
+  });
+}
+
+export function useUpdateRefreshConfigMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: sessionApi.updateRefreshConfig,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions', 'refresh-config'] }),
+  });
+}
+
+export function useRestartSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sessionApi.restart(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'refresh-config'] });
+    },
+  });
+}
+
+export function useRefreshAllSessionsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mode?: 'sessions' | 'service') => sessionApi.refreshAll(mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'refresh-config'] });
+    },
+  });
+}
+
 export function useStopSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({

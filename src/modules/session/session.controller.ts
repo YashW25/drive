@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Query, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Query, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { SessionService } from './session.service';
 import {
@@ -10,6 +10,9 @@ import {
   SendChatStateDto,
   RequestPairingCodeDto,
   PairingCodeResponseDto,
+  RefreshAllSessionsDto,
+  UpdateRefreshConfigDto,
+  AutoRefreshConfigDto,
 } from './dto';
 import { Session } from './entities/session.entity';
 import { ChatSummary } from '../../engine/interfaces/whatsapp-engine.interface';
@@ -67,6 +70,37 @@ export class SessionController {
     return sessions.map(s => this.transformSession(s));
   }
 
+  @Post('refresh-all')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'Refresh all active WhatsApp sessions or restart the WhatsApp service' })
+  @ApiResponse({ status: 200, description: 'Sessions refreshed' })
+  async refreshAll(@Body() dto?: RefreshAllSessionsDto): Promise<any> {
+    const result = await this.sessionService.refreshAll(dto?.mode);
+    await this.auditService.logInfo(AuditAction.SESSIONS_REFRESHED, {
+      metadata: {
+        mode: dto?.mode || 'sessions',
+        count: result.total,
+      },
+    });
+    return result;
+  }
+
+  @Get('refresh-config')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'Get WhatsApp auto-refresh schedule and maintenance configuration' })
+  @ApiResponse({ status: 200, description: 'Auto-refresh configuration', type: AutoRefreshConfigDto })
+  getRefreshConfig(): AutoRefreshConfigDto {
+    return this.sessionService.getRefreshConfig();
+  }
+
+  @Put('refresh-config')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'Update WhatsApp auto-refresh schedule and maintenance configuration' })
+  @ApiResponse({ status: 200, description: 'Updated configuration', type: AutoRefreshConfigDto })
+  updateRefreshConfig(@Body() dto: UpdateRefreshConfigDto): AutoRefreshConfigDto {
+    return this.sessionService.updateRefreshConfig(dto);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get session by ID' })
   @ApiParam({ name: 'id', description: 'Session ID' })
@@ -113,6 +147,25 @@ export class SessionController {
   async start(@Param('id') id: string): Promise<SessionResponseDto> {
     const session = await this.sessionService.start(id);
     await this.auditService.logInfo(AuditAction.SESSION_STARTED, {
+      sessionId: session.id,
+      sessionName: session.name,
+    });
+    return this.transformSession(session);
+  }
+
+  @Post(':id/restart')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'Restart / refresh a WhatsApp session without changing its ID' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Session restarted and refreshed',
+    type: SessionResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async restart(@Param('id') id: string): Promise<SessionResponseDto> {
+    const session = await this.sessionService.restart(id);
+    await this.auditService.logInfo(AuditAction.SESSION_RESTARTED, {
       sessionId: session.id,
       sessionName: session.name,
     });

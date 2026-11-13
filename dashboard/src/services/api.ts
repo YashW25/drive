@@ -38,6 +38,15 @@ export interface SessionStats {
   memoryUsage: { heapUsed: number; heapTotal: number; rss: number };
 }
 
+export interface AutoRefreshConfig {
+  enabled: boolean;
+  intervalHours: number;
+  mode: 'sessions' | 'service';
+  lastRefreshAt: string | null;
+  nextRefreshAt: string | null;
+  totalRefreshesDone: number;
+}
+
 export type WebhookFilterOperator = 'is' | 'isNot' | 'contains' | 'equals';
 
 export interface WebhookFilterCondition {
@@ -375,6 +384,21 @@ export const sessionApi = {
     }),
   delete: (id: string) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
   start: (id: string) => request<Session>(`/sessions/${id}/start`, { method: 'POST' }),
+  restart: (id: string) => request<Session>(`/sessions/${id}/restart`, { method: 'POST' }),
+  refreshAll: (mode: 'sessions' | 'service' = 'sessions') =>
+    request<{ message: string; mode: string; total: number; refreshed: string[]; timestamp: string }>(
+      '/sessions/refresh-all',
+      {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      },
+    ),
+  getRefreshConfig: () => request<AutoRefreshConfig>('/sessions/refresh-config'),
+  updateRefreshConfig: (data: Partial<AutoRefreshConfig>) =>
+    request<AutoRefreshConfig>('/sessions/refresh-config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   stop: (id: string) => request<Session>(`/sessions/${id}/stop`, { method: 'POST' }),
   forceKill: (id: string) => request<Session>(`/sessions/${id}/force-kill`, { method: 'POST' }),
   getQR: (id: string) => request<{ qrCode: string; status: string }>(`/sessions/${id}/qr`),

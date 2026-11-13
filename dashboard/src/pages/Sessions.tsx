@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans, useTranslation } from 'react-i18next';
-import { Plus, QrCode, RefreshCw, Trash2, Eye, Loader2, Play, Square, X, Search, Filter, Skull } from 'lucide-react';
-import { sessionApi, type Session } from '../services/api';
+import { Plus, QrCode, RefreshCw, RotateCw, Trash2, Eye, Loader2, Play, Square, X, Search, Filter, Skull, Settings } from 'lucide-react';
+import { sessionApi, type Session, type AutoRefreshConfig } from '../services/api';
 import { queryKeys } from '../hooks/queries';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useToast } from '../components/Toast';
@@ -29,6 +29,18 @@ export function Sessions() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [killConfirmId, setKillConfirmId] = useState<string | null>(null);
+
+  // Browser & WhatsApp Service Refreshment state
+  const [showRefreshModal, setShowRefreshModal] = useState(false);
+  const [refreshingSessionId, setRefreshingSessionId] = useState<string | null>(null);
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshConfig, setRefreshConfig] = useState<AutoRefreshConfig | null>(null);
+  const [modalRefreshConfig, setModalRefreshConfig] = useState<{ enabled: boolean; intervalHours: number; mode: 'sessions' | 'service' }>({
+    enabled: true,
+    intervalHours: 12,
+    mode: 'sessions',
+  });
+  const [savingConfig, setSavingConfig] = useState(false);
 
   const fetchSessions = useCallback(async (): Promise<Session[]> => {
     try {
@@ -80,8 +92,23 @@ export function Sessions() {
     }
   }, [isConnected, subscribe]);
 
+  const fetchRefreshConfig = useCallback(async () => {
+    try {
+      const cfg = await sessionApi.getRefreshConfig();
+      setRefreshConfig(cfg);
+      setModalRefreshConfig({
+        enabled: cfg.enabled,
+        intervalHours: cfg.intervalHours,
+        mode: cfg.mode,
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     fetchSessions();
+    fetchRefreshConfig();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -216,6 +243,62 @@ export function Sessions() {
     }
   };
 
+  const handleRestart = async (id: string) => {
+    const session = sessions.find(s => s.id === id);
+    try {
+      setRefreshingSessionId(id);
+      toast.info(`Refreshing WhatsApp session "${session?.name || id}"...`);
+      const updated = await sessionApi.restart(id);
+      setSessions(prev => prev.map(s => (s.id === id ? updated : s)));
+      toast.success(`Session "${session?.name || id}" refreshed! Reconnecting with same session ID.`);
+      void fetchSessions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to refresh session');
+    } finally {
+      setRefreshingSessionId(null);
+    }
+  };
+
+  const handleRefreshAll = async (mode: 'sessions' | 'service' = 'sessions') => {
+    try {
+      setRefreshingAll(true);
+      toast.info(
+        mode === 'service'
+          ? 'Initiating full WhatsApp service restart... Previous sessions will reconnect automatically.'
+          : 'Refreshing all active WhatsApp sessions without changing session IDs...',
+      );
+      const res = await sessionApi.refreshAll(mode);
+      toast.success(res.message);
+      if (mode === 'service') {
+        setTimeout(() => {
+          window.location.reload();
+        }, 4000);
+      } else {
+        await fetchSessions();
+        await fetchRefreshConfig();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Refreshment failed');
+    } finally {
+      setRefreshingAll(false);
+      setShowRefreshModal(false);
+    }
+  };
+
+  const handleSaveRefreshConfig = async () => {
+    try {
+      setSavingConfig(true);
+      const updated = await sessionApi.updateRefreshConfig(modalRefreshConfig);
+      setRefreshConfig(updated);
+      toast.success('Auto-refresh schedule updated successfully!');
+      setShowRefreshModal(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save configuration');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
   const handleForceKill = async (id: string) => {
     try {
       await sessionApi.forceKill(id);
@@ -269,14 +352,65 @@ export function Sessions() {
         title={t('sessions.title')}
         subtitle={t('sessions.subtitle')}
         actions={
-          canWrite && (
-            <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
-              <Plus size={18} />
-              {t('sessions.newSession')}
-            </button>
-          )
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {canWrite && (
+              <button
+                className="btn-secondary"
+                onClick={() => setShowRefreshModal(true)}
+                title="Browser & WhatsApp Service Refreshment"
+              >
+                <RotateCw size={16} />
+                <span>Refreshment</span>
+              </button>
+            )}
+            {canWrite && (
+              <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
+                <Plus size={18} />
+                {t('sessions.newSession')}
+              </button>
+            )}
+          </div>
         }
       />
+
+      {refreshConfig && (
+        <div className="refresh-status-banner">
+          <div className="banner-info">
+            <div className={`pulse-dot-indicator ${refreshConfig.enabled ? 'active' : 'inactive'}`}></div>
+            <div>
+              <div className="banner-title">
+                WhatsApp Refreshment: <strong>{refreshConfig.enabled ? `Auto-Refresh Active (Every ${refreshConfig.intervalHours}h)` : 'Manual Refresh Mode'}</strong>
+              </div>
+              <div className="banner-meta">
+                {refreshConfig.nextRefreshAt
+                  ? `Next cycle: ${new Date(refreshConfig.nextRefreshAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Automatic schedule off'}
+                {refreshConfig.lastRefreshAt && ` • Last refreshed: ${new Date(refreshConfig.lastRefreshAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                {refreshConfig.totalRefreshesDone > 0 && ` • ${refreshConfig.totalRefreshesDone} cycle(s) done`}
+              </div>
+            </div>
+          </div>
+          <div className="banner-actions">
+            <button
+              className="btn-refresh-pill"
+              onClick={() => handleRefreshAll('sessions')}
+              disabled={refreshingAll}
+              title="Cleanly restarts WhatsApp connections in memory without changing session IDs or logging out"
+            >
+              {refreshingAll ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+              <span>Refresh Active Sessions</span>
+            </button>
+            <button
+              className="btn-refresh-pill secondary"
+              onClick={() => setShowRefreshModal(true)}
+              title="Configure schedule & refreshment mode"
+            >
+              <Settings size={13} />
+              <span>Schedule</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="filters-bar">
         <div className="search-input">
@@ -519,6 +653,117 @@ export function Sessions() {
         </div>
       )}
 
+      {/* WhatsApp Browser & Service Refreshment Modal */}
+      {showRefreshModal && (
+        <div className="modal-overlay" onClick={() => setShowRefreshModal(false)}>
+          <div className="modal modal-refresh" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>WhatsApp Browser & Service Refreshment</h2>
+              <button className="btn-icon" onClick={() => setShowRefreshModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="refresh-modal-desc">
+                When WhatsApp is used continuously for a long period, memory leaks and socket degradation
+                can cause lags, stuck messages, or slow response times.
+                <br /><br />
+                Refreshment safely restarts the WhatsApp engine, clears socket/browser lag, and automatically
+                reconnects all previously authenticated sessions with the <strong>exact same session ID and credentials</strong> (no QR scan needed).
+              </p>
+
+              <div className="refresh-action-box">
+                <span className="box-title">Immediate Refreshment</span>
+                <div className="refresh-buttons-row">
+                  <button
+                    className="btn-refresh-action"
+                    onClick={() => handleRefreshAll('sessions')}
+                    disabled={refreshingAll}
+                  >
+                    {refreshingAll ? <Loader2 className="animate-spin" size={16} /> : <RotateCw size={16} />}
+                    <div className="btn-action-text">
+                      <strong>Refresh Active Sessions</strong>
+                      <span>Restores all active connections in memory without HTTP downtime</span>
+                    </div>
+                  </button>
+
+                  <button
+                    className="btn-refresh-action danger"
+                    onClick={() => handleRefreshAll('service')}
+                    disabled={refreshingAll}
+                  >
+                    {refreshingAll ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                    <div className="btn-action-text">
+                      <strong>Full Service Restart</strong>
+                      <span>Reboots service process, clears OS & browser RAM, auto-reconnects sessions</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="refresh-action-box">
+                <span className="box-title">Automatic Scheduled Refreshment</span>
+                <div className="toggle-setting-row">
+                  <div>
+                    <strong>Periodic Maintenance Cycle</strong>
+                    <p className="setting-hint">Automatically cycles WhatsApp connections at set intervals</p>
+                  </div>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={modalRefreshConfig.enabled}
+                      onChange={e => setModalRefreshConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+
+                {modalRefreshConfig.enabled && (
+                  <div className="schedule-form-fields">
+                    <div className="form-field">
+                      <label>Refresh Interval</label>
+                      <select
+                        value={modalRefreshConfig.intervalHours}
+                        onChange={e => setModalRefreshConfig(prev => ({ ...prev, intervalHours: Number(e.target.value) }))}
+                      >
+                        <option value={4}>Every 4 Hours</option>
+                        <option value={6}>Every 6 Hours</option>
+                        <option value={12}>Every 12 Hours (Recommended)</option>
+                        <option value={24}>Every 24 Hours (Daily)</option>
+                        <option value={48}>Every 2 Days</option>
+                      </select>
+                    </div>
+
+                    <div className="form-field">
+                      <label>Refreshment Mode</label>
+                      <select
+                        value={modalRefreshConfig.mode}
+                        onChange={e => setModalRefreshConfig(prev => ({ ...prev, mode: e.target.value as 'sessions' | 'service' }))}
+                      >
+                        <option value="sessions">Session Engine Refresh (Zero HTTP downtime)</option>
+                        <option value="service">Full Service Restart (Clears all OS/RAM buffers)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowRefreshModal(false)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn-primary"
+                onClick={handleSaveRefreshConfig}
+                disabled={savingConfig}
+              >
+                {savingConfig ? <Loader2 className="animate-spin" size={16} /> : 'Save Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="sessions-grid">
         {filteredSessions.length === 0 ? (
           <div className="empty-state">
@@ -583,10 +828,27 @@ export function Sessions() {
                     {t('sessions.actions.start')}
                   </button>
                 ) : canWrite && ['ready', 'initializing', 'connecting', 'qr_ready'].includes(session.status) ? (
-                  <button className="btn-action" onClick={() => handleStop(session.id)}>
-                    <Square size={16} />
-                    {t('sessions.actions.stop')}
-                  </button>
+                  <>
+                    {session.status === 'ready' && (
+                      <button
+                        className="btn-action"
+                        onClick={() => handleRestart(session.id)}
+                        disabled={refreshingSessionId === session.id}
+                        title="Refresh WhatsApp connection (clears lag without changing session ID)"
+                      >
+                        {refreshingSessionId === session.id ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : (
+                          <RotateCw size={16} />
+                        )}
+                        Refresh
+                      </button>
+                    )}
+                    <button className="btn-action" onClick={() => handleStop(session.id)}>
+                      <Square size={16} />
+                      {t('sessions.actions.stop')}
+                    </button>
+                  </>
                 ) : canWrite ? (
                   <button className="btn-action" onClick={() => handleStart(session.id)}>
                     <RefreshCw size={16} />
