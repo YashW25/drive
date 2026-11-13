@@ -490,9 +490,19 @@ export interface CheckNumberResponse {
   whatsappId: string | null;
 }
 
+export interface WhatsAppContactItem {
+  id: string;
+  name?: string;
+  pushname?: string;
+  number?: string;
+  shortName?: string;
+}
+
 export const contactApi = {
   checkNumber: (sessionId: string, number: string) =>
     request<CheckNumberResponse>(`/sessions/${sessionId}/contacts/check/${encodeURIComponent(number)}`),
+  list: (sessionId: string, params?: { limit?: number; offset?: number }) =>
+    request<WhatsAppContactItem[]>(`/sessions/${sessionId}/contacts${params?.limit ? `?limit=${params.limit}` : ''}`),
 };
 
 // =============================================================================

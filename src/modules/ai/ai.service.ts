@@ -46,6 +46,23 @@ export interface UnrepliedScanSummary {
   }>;
 }
 
+/**
+ * Parses a contact entry which may be a raw phone number, "phone (name)", or "phone | name".
+ */
+export function parseRuleContactEntry(entry: string): { phone: string; name: string } {
+  const raw = (entry || '').trim();
+  if (!raw) return { phone: '', name: '' };
+  if (raw.includes('|')) {
+    const [p, ...rest] = raw.split('|');
+    return { phone: p.replace(/\D/g, ''), name: rest.join('|').trim() };
+  }
+  const match = raw.match(/^([^\(]+)\((.+)\)$/);
+  if (match) {
+    return { phone: match[1].replace(/\D/g, ''), name: match[2].trim() };
+  }
+  return { phone: raw.replace(/\D/g, ''), name: '' };
+}
+
 @Injectable()
 export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
@@ -304,7 +321,7 @@ export class AiService implements OnModuleInit {
             const engine = this.sessionService.getEngine(sessionId);
             if (engine && typeof (engine as any).resolveContactLid === 'function') {
               for (const n of numbers) {
-                const clean = n.replace(/\D/g, '');
+                const { phone: clean } = parseRuleContactEntry(n);
                 if (clean.length >= 10) {
                   const resolvedLid = await (engine as any).resolveContactLid(clean);
                   if (
@@ -323,24 +340,34 @@ export class AiService implements OnModuleInit {
         }
 
         return numbers.some(n => {
-          const raw = n.trim();
-          if (!raw) return false;
-          const cleanTarget = raw.replace(/\D/g, '');
-          if (!cleanTarget) {
-            // Non-numeric target (e.g. contact name or pushName)
+          const { phone: cleanTarget, name: targetName } = parseRuleContactEntry(n);
+          if (!cleanTarget && !targetName) {
+            const raw = n.trim();
+            if (!raw) return false;
             const pushName = incoming.contact?.pushName || incoming.contact?.name || '';
             return pushName.toLowerCase().includes(raw.toLowerCase());
           }
 
-          const numberMatch =
-            cleanTarget === effectiveSender ||
-            cleanTarget === senderNumber ||
-            (cleanTarget.length >= 10 && effectiveSender.endsWith(cleanTarget)) ||
-            (effectiveSender.length >= 10 && cleanTarget.endsWith(effectiveSender));
+          if (cleanTarget) {
+            const numberMatch =
+              cleanTarget === effectiveSender ||
+              cleanTarget === senderNumber ||
+              (cleanTarget.length >= 10 && effectiveSender.endsWith(cleanTarget)) ||
+              (effectiveSender.length >= 10 && cleanTarget.endsWith(effectiveSender));
 
-          const chatIdMatch = incoming.chatId ? incoming.chatId.includes(cleanTarget) : false;
+            const chatIdMatch = incoming.chatId ? incoming.chatId.includes(cleanTarget) : false;
 
-          return numberMatch || chatIdMatch;
+            if (numberMatch || chatIdMatch) return true;
+          }
+
+          if (targetName) {
+            const pushName = incoming.contact?.pushName || incoming.contact?.name || '';
+            if (pushName && pushName.toLowerCase().includes(targetName.toLowerCase())) {
+              return true;
+            }
+          }
+
+          return false;
         });
       }
 

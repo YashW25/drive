@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Bot,
   Sparkles,
@@ -18,9 +18,15 @@ import {
   RefreshCw,
   CheckCircle2,
   MessageCircle,
+  Upload,
+  UserPlus,
+  Users,
+  Search,
+  Phone,
 } from 'lucide-react';
 import {
   aiApi,
+  contactApi,
   type AiAutoReplyRule,
   type AiTriggerType,
   type CreateAiRuleInput,
@@ -28,6 +34,17 @@ import {
   type UnrepliedChatInfo,
   type ScanAndReplyResult,
 } from '../services/api';
+import {
+  cleanPhoneNumber,
+  formatPhoneDisplay,
+  parseGoogleContactsCSV,
+  parseVCard,
+  parsePastedContacts,
+  deserializeRuleNumbers,
+  serializeRuleContacts,
+  generateContactId,
+  type ParsedRuleContact,
+} from '../utils/googleContactsParser';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
   useAiRulesQuery,
@@ -71,6 +88,26 @@ export function AiAutoReply() {
   const [formCooldown, setFormCooldown] = useState(10);
   const [formMaxTokens, setFormMaxTokens] = useState(150);
   const [formEnabled, setFormEnabled] = useState(true);
+
+  // Specific numbers contact whitelist state
+  const [formContacts, setFormContacts] = useState<ParsedRuleContact[]>([]);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editNameVal, setEditNameVal] = useState('');
+  const [editPhoneVal, setEditPhoneVal] = useState('');
+  const [contactSearch, setContactSearch] = useState('');
+  const [showPasteInput, setShowPasteInput] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Import preview modal state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importModalTitle, setImportModalTitle] = useState('');
+  const [importModalSubtitle, setImportModalSubtitle] = useState('');
+  const [importModalContacts, setImportModalContacts] = useState<ParsedRuleContact[]>([]);
+  const [importSearch, setImportSearch] = useState('');
+  const [loadingWhatsAppContacts, setLoadingWhatsAppContacts] = useState(false);
 
   // Playground state
   const [testPrompt, setTestPrompt] = useState('Hello! Can you tell me what services you offer?');
@@ -133,6 +170,12 @@ export function AiAutoReply() {
     setFormSessionId('*');
     setFormTriggerType('specific');
     setFormSpecificNumbers('');
+    setFormContacts([]);
+    setNewContactName('');
+    setNewContactPhone('');
+    setEditingContactId(null);
+    setContactSearch('');
+    setShowPasteInput(false);
     setFormCustomKeywords('');
     setFormEndpoint(DEFAULT_AI_ENDPOINT);
     setFormApiKey(DEFAULT_AI_KEY);
@@ -149,6 +192,12 @@ export function AiAutoReply() {
     setFormSessionId(rule.sessionId || '*');
     setFormTriggerType(rule.triggerType);
     setFormSpecificNumbers(rule.specificNumbers ? rule.specificNumbers.join(', ') : '');
+    setFormContacts(deserializeRuleNumbers(rule.specificNumbers || []));
+    setNewContactName('');
+    setNewContactPhone('');
+    setEditingContactId(null);
+    setContactSearch('');
+    setShowPasteInput(false);
     setFormCustomKeywords(rule.customKeywords ? rule.customKeywords.join(', ') : '');
     setFormEndpoint(rule.aiEndpoint || DEFAULT_AI_ENDPOINT);
     setFormApiKey(rule.aiApiKey || DEFAULT_AI_KEY);
@@ -159,14 +208,237 @@ export function AiAutoReply() {
     setShowModal(true);
   };
 
+  // Contact whitelist management functions for this specific rule
+  const handleAddContact = () => {
+    if (!newContactPhone.trim()) return;
+    const clean = cleanPhoneNumber(newContactPhone, '91');
+    if (clean.length < 7) {
+      alert('Please enter a valid phone number with country code (e.g. 919373395000)');
+      return;
+    }
+    const alreadyExists = formContacts.some((c) => c.phone === clean);
+    if (alreadyExists) {
+      alert(`Phone number +${clean} is already in this rule's whitelist`);
+      return;
+    }
+    const newEntry: ParsedRuleContact = {
+      id: generateContactId(),
+      name: newContactName.trim(),
+      phone: clean,
+      formattedPhone: formatPhoneDisplay(clean),
+      selected: true,
+    };
+    setFormContacts((prev) => [newEntry, ...prev]);
+    setNewContactName('');
+    setNewContactPhone('');
+  };
+
+  const handleStartInlineEdit = (contact: ParsedRuleContact) => {
+    setEditingContactId(contact.id);
+    setEditNameVal(contact.name);
+    setEditPhoneVal(contact.phone);
+  };
+
+  const handleSaveInlineEdit = () => {
+    if (!editingContactId) return;
+    const clean = cleanPhoneNumber(editPhoneVal, '91');
+    if (clean.length < 7) {
+      alert('Please enter a valid phone number');
+      return;
+    }
+    setFormContacts((prev) =>
+      prev.map((c) =>
+        c.id === editingContactId
+          ? {
+              ...c,
+              name: editNameVal.trim(),
+              phone: clean,
+              formattedPhone: formatPhoneDisplay(clean),
+            }
+          : c
+      )
+    );
+    setEditingContactId(null);
+  };
+
+  const handleRemoveContact = (id: string) => {
+    setFormContacts((prev) => prev.filter((c) => c.id !== id));
+    if (editingContactId === id) setEditingContactId(null);
+  };
+
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (!content) return;
+
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      const isVcf =
+        file.name.toLowerCase().endsWith('.vcf') || file.name.toLowerCase().endsWith('.vcard');
+
+      let parsed: ParsedRuleContact[] = [];
+      if (isCsv) {
+        parsed = parseGoogleContactsCSV(content, '91');
+      } else if (isVcf) {
+        parsed = parseVCard(content, '91');
+      } else {
+        parsed = parseGoogleContactsCSV(content, '91');
+        if (parsed.length === 0) {
+          parsed = parsePastedContacts(content, '91');
+        }
+      }
+
+      if (parsed.length === 0) {
+        alert(
+          'No valid phone numbers found in the selected file. Please export contacts from Google Contacts as CSV or vCard (.vcf).'
+        );
+        return;
+      }
+
+      setImportModalContacts(parsed.map((c) => ({ ...c, selected: true })));
+      setImportModalTitle('Import Google Contacts');
+      setImportModalSubtitle(`Found ${parsed.length} contacts in "${file.name}"`);
+      setImportSearch('');
+      setImportModalOpen(true);
+    };
+
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleOpenWhatsAppContacts = async () => {
+    const targetSession =
+      formSessionId !== '*'
+        ? formSessionId
+        : sessions.find((s) => s.status === 'ready' || s.status === 'idle')?.id ||
+          sessions[0]?.id;
+
+    if (!targetSession) {
+      alert('Please select a WhatsApp session first.');
+      return;
+    }
+
+    setLoadingWhatsAppContacts(true);
+    try {
+      const list = await contactApi.list(targetSession, { limit: 1000 });
+      if (!Array.isArray(list) || list.length === 0) {
+        alert('No WhatsApp contacts found for this session.');
+        return;
+      }
+
+      const seen = new Set<string>();
+      const mapped: ParsedRuleContact[] = [];
+
+      for (const item of list) {
+        const raw = item.number || item.id?.replace(/@.*$/, '') || '';
+        const clean = cleanPhoneNumber(raw, '91');
+        if (clean.length >= 7 && !seen.has(clean)) {
+          seen.add(clean);
+          mapped.push({
+            id: generateContactId(),
+            name: item.name || item.pushname || item.shortName || '',
+            phone: clean,
+            formattedPhone: formatPhoneDisplay(clean),
+            selected: true,
+          });
+        }
+      }
+
+      if (mapped.length === 0) {
+        alert('No phone numbers could be extracted from WhatsApp contacts.');
+        return;
+      }
+
+      setImportModalContacts(mapped);
+      const sessionObj = sessions.find((s) => s.id === targetSession);
+      setImportModalTitle('Import WhatsApp Contacts');
+      setImportModalSubtitle(
+        `Found ${mapped.length} contacts in session "${sessionObj?.name || targetSession}"`
+      );
+      setImportSearch('');
+      setImportModalOpen(true);
+    } catch (err: any) {
+      console.error('Failed to load WhatsApp contacts:', err);
+      alert(`Could not load WhatsApp contacts: ${err.message || 'Session may not be active'}`);
+    } finally {
+      setLoadingWhatsAppContacts(false);
+    }
+  };
+
+  const handleToggleImportContact = (id: string) => {
+    setImportModalContacts((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c))
+    );
+  };
+
+  const handleToggleAllImport = () => {
+    const anyUnselected = importModalContacts.some((c) => !c.selected);
+    setImportModalContacts((prev) => prev.map((c) => ({ ...c, selected: anyUnselected })));
+  };
+
+  const handleConfirmImport = () => {
+    const selected = importModalContacts.filter((c) => c.selected);
+    if (selected.length === 0) return;
+
+    const existingPhones = new Set(formContacts.map((c) => c.phone));
+    const toAdd = selected.filter((c) => !existingPhones.has(c.phone));
+
+    setFormContacts((prev) => [...prev, ...toAdd]);
+    setImportModalOpen(false);
+  };
+
+  const handleApplyBulkPaste = () => {
+    if (!pasteText.trim()) return;
+    const parsed = parsePastedContacts(pasteText, '91');
+    if (parsed.length === 0) {
+      alert('No valid phone numbers found in the pasted text.');
+      return;
+    }
+    const existingPhones = new Set(formContacts.map((c) => c.phone));
+    const toAdd = parsed.filter((c) => !existingPhones.has(c.phone));
+    setFormContacts((prev) => [...prev, ...toAdd]);
+    setPasteText('');
+    setShowPasteInput(false);
+  };
+
+  const filteredContacts = formContacts.filter((c) => {
+    if (!contactSearch.trim()) return true;
+    const q = contactSearch.toLowerCase().trim();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.phone.includes(q) ||
+      c.formattedPhone.toLowerCase().includes(q)
+    );
+  });
+
+  const filteredImportContacts = importModalContacts.filter((c) => {
+    if (!importSearch.trim()) return true;
+    const q = importSearch.toLowerCase().trim();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.phone.includes(q) ||
+      c.formattedPhone.toLowerCase().includes(q)
+    );
+  });
+
+  const selectedImportCount = importModalContacts.filter((c) => c.selected).length;
+  const allImportSelected =
+    importModalContacts.length > 0 && importModalContacts.every((c) => c.selected);
+
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) return;
 
-    const specificNumsArray = formSpecificNumbers
-      .split(',')
-      .map((n) => n.trim().replace(/[^0-9]/g, ''))
-      .filter(Boolean);
+    const specificNumsArray =
+      formTriggerType === 'specific'
+        ? serializeRuleContacts(formContacts)
+        : formSpecificNumbers
+            .split(',')
+            .map((n) => n.trim().replace(/[^0-9]/g, ''))
+            .filter(Boolean);
 
     const keywordsArray = formCustomKeywords
       .split(',')
@@ -513,12 +785,20 @@ export function AiAutoReply() {
                   <div className="rule-card-body">
                     {rule.triggerType === 'specific' && rule.specificNumbers?.length > 0 && (
                       <div className="filter-chips">
-                        <span className="chip-label">Target Numbers:</span>
-                        {rule.specificNumbers.map((num, i) => (
-                          <span key={i} className="filter-chip">
-                            +{num}
+                        <span className="chip-label">Target Contacts ({rule.specificNumbers.length}):</span>
+                        {rule.specificNumbers.slice(0, 6).map((num, i) => {
+                          const parsed = deserializeRuleNumbers([num])[0];
+                          return (
+                            <span key={i} className="filter-chip">
+                              {parsed?.name ? `${parsed.name} (+${parsed.phone})` : `+${parsed?.phone || num}`}
+                            </span>
+                          );
+                        })}
+                        {rule.specificNumbers.length > 6 && (
+                          <span className="filter-chip more-chip">
+                            +{rule.specificNumbers.length - 6} more
                           </span>
-                        ))}
+                        )}
                       </div>
                     )}
 
@@ -783,19 +1063,279 @@ export function AiAutoReply() {
                   </div>
                 </div>
 
-                {/* Conditional Specific Numbers */}
+                {/* Conditional Specific Numbers: Full Contact Whitelist Manager */}
                 {formTriggerType === 'specific' && (
-                  <div className="form-group highlight-box">
-                    <label>Specific Numbers (Comma-separated)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 919561485909, 917588688707"
-                      value={formSpecificNumbers}
-                      onChange={(e) => setFormSpecificNumbers(e.target.value)}
-                    />
-                    <span className="form-hint">
-                      Enter phone numbers with country code, separated by commas.
-                    </span>
+                  <div className="form-group contacts-manager-box">
+                    <div className="contacts-manager-header">
+                      <div className="contacts-title-area">
+                        <div className="contacts-title-row">
+                          <Users size={18} className="text-primary" />
+                          <strong>Rule Contacts Whitelist ({formContacts.length})</strong>
+                        </div>
+                        <span className="form-hint">
+                          AI will only auto-reply to these contacts for this specific rule.
+                        </span>
+                      </div>
+
+                      <div className="contacts-header-actions">
+                        {/* Hidden file input for Google Contacts / vCard */}
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          accept=".csv,.vcf,.vcard"
+                          style={{ display: 'none' }}
+                          onChange={handleFileImport}
+                        />
+                        <button
+                          type="button"
+                          className="btn-contact-action google-btn"
+                          onClick={() => fileInputRef.current?.click()}
+                          title="Import Google Contacts (.csv or .vcf exported from contacts.google.com)"
+                        >
+                          <Upload size={14} />
+                          <span>Import Google Contacts</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-contact-action whatsapp-btn"
+                          onClick={handleOpenWhatsAppContacts}
+                          disabled={loadingWhatsAppContacts}
+                          title="Import contacts from active WhatsApp session"
+                        >
+                          {loadingWhatsAppContacts ? (
+                            <Loader2 size={14} className="spinner" />
+                          ) : (
+                            <MessageSquare size={14} />
+                          )}
+                          <span>Import from WhatsApp</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-contact-action"
+                          onClick={() => setShowPasteInput(!showPasteInput)}
+                          title="Paste a list of numbers or contacts"
+                        >
+                          <span>{showPasteInput ? 'Hide Bulk Paste' : 'Bulk Paste'}</span>
+                        </button>
+
+                        {formContacts.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn-contact-action danger-btn"
+                            onClick={() => {
+                              if (window.confirm('Remove all contacts from this rule?')) {
+                                setFormContacts([]);
+                              }
+                            }}
+                            title="Clear all contacts"
+                          >
+                            <Trash2 size={13} />
+                            <span>Clear All</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bulk Paste Area if toggled */}
+                    {showPasteInput && (
+                      <div className="bulk-paste-container">
+                        <textarea
+                          rows={3}
+                          className="bulk-paste-textarea"
+                          placeholder="Paste numbers or contacts here, separated by commas or new lines:&#10;e.g. 919373395000, 917588688707&#10;or: Yash: +91 93733 95000"
+                          value={pasteText}
+                          onChange={(e) => setPasteText(e.target.value)}
+                        />
+                        <div className="bulk-paste-actions">
+                          <button
+                            type="button"
+                            className="btn-secondary btn-sm"
+                            onClick={() => {
+                              setPasteText('');
+                              setShowPasteInput(false);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-primary btn-sm"
+                            onClick={handleApplyBulkPaste}
+                          >
+                            Add Parsed Contacts
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add Individual Contact Bar */}
+                    <div className="add-contact-bar">
+                      <div className="contact-input-field name-field">
+                        <input
+                          type="text"
+                          placeholder="Contact Name (optional, e.g. Yash)"
+                          value={newContactName}
+                          onChange={(e) => setNewContactName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddContact();
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="contact-input-field phone-field">
+                        <input
+                          type="text"
+                          placeholder="Phone Number (e.g. 919373395000 or +91 93733 95000) *"
+                          value={newContactPhone}
+                          onChange={(e) => setNewContactPhone(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddContact();
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-primary btn-add-contact"
+                        onClick={handleAddContact}
+                        disabled={!newContactPhone.trim()}
+                      >
+                        <UserPlus size={15} />
+                        <span>Add</span>
+                      </button>
+                    </div>
+
+                    {/* Search filter if 4+ contacts */}
+                    {formContacts.length >= 4 && (
+                      <div className="contact-search-bar">
+                        <Search size={14} className="search-icon" />
+                        <input
+                          type="text"
+                          placeholder={`Search ${formContacts.length} contacts by name or number...`}
+                          value={contactSearch}
+                          onChange={(e) => setContactSearch(e.target.value)}
+                        />
+                        {contactSearch && (
+                          <button
+                            type="button"
+                            className="search-clear-btn"
+                            onClick={() => setContactSearch('')}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Contacts Scrollable List */}
+                    <div className="rule-contacts-list">
+                      {formContacts.length === 0 ? (
+                        <div className="empty-contacts-note">
+                          <Users size={24} />
+                          <p>No trigger contacts added yet.</p>
+                          <span>Add numbers above, or click &ldquo;Import Google Contacts&rdquo; to load contacts for this rule.</span>
+                        </div>
+                      ) : filteredContacts.length === 0 ? (
+                        <div className="empty-contacts-note">
+                          <p>No contacts match &ldquo;{contactSearch}&rdquo;</p>
+                        </div>
+                      ) : (
+                        filteredContacts.map((contact) => (
+                          <div key={contact.id} className="rule-contact-item">
+                            {editingContactId === contact.id ? (
+                              <div className="contact-inline-edit">
+                                <input
+                                  type="text"
+                                  className="edit-name-input"
+                                  placeholder="Name"
+                                  value={editNameVal}
+                                  onChange={(e) => setEditNameVal(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveInlineEdit();
+                                    }
+                                  }}
+                                />
+                                <input
+                                  type="text"
+                                  className="edit-phone-input"
+                                  placeholder="Phone"
+                                  value={editPhoneVal}
+                                  onChange={(e) => setEditPhoneVal(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveInlineEdit();
+                                    }
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn-icon-sm btn-save-contact"
+                                  onClick={handleSaveInlineEdit}
+                                  title="Save changes"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-icon-sm"
+                                  onClick={() => setEditingContactId(null)}
+                                  title="Cancel"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="contact-avatar-pill">
+                                  {contact.name ? (
+                                    contact.name.slice(0, 2).toUpperCase()
+                                  ) : (
+                                    <Phone size={13} />
+                                  )}
+                                </div>
+                                <div className="contact-info-col">
+                                  <span className="contact-name-txt">
+                                    {contact.name || (
+                                      <em className="unnamed-txt">Unnamed Contact</em>
+                                    )}
+                                  </span>
+                                  <span className="contact-phone-txt">
+                                    {contact.formattedPhone || `+${contact.phone}`}
+                                  </span>
+                                </div>
+                                <div className="contact-actions-col">
+                                  <button
+                                    type="button"
+                                    className="btn-icon-sm"
+                                    onClick={() => handleStartInlineEdit(contact)}
+                                    title="Edit contact"
+                                  >
+                                    <Edit size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-icon-sm danger"
+                                    onClick={() => handleRemoveContact(contact.id)}
+                                    title="Remove from whitelist"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -959,6 +1499,97 @@ export function AiAutoReply() {
                 disabled={deleteMutation.isPending}
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Delete Rule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Contacts Modal (Google Contacts & WhatsApp) */}
+      {importModalOpen && (
+        <div
+          className="modal-overlay"
+          style={{ zIndex: 1100 }}
+          onClick={() => setImportModalOpen(false)}
+        >
+          <div
+            className="modal import-contacts-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h2>{importModalTitle}</h2>
+                <p className="modal-subtitle">{importModalSubtitle}</p>
+              </div>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => setImportModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body import-contacts-body">
+              <div className="import-controls-row">
+                <div className="import-search-box">
+                  <Search size={14} />
+                  <input
+                    type="text"
+                    placeholder="Search by name or phone..."
+                    value={importSearch}
+                    onChange={(e) => setImportSearch(e.target.value)}
+                  />
+                </div>
+                <div className="import-select-all-btn">
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    onClick={handleToggleAllImport}
+                  >
+                    {allImportSelected ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="import-list-scroll">
+                {filteredImportContacts.length === 0 ? (
+                  <div className="empty-contacts-note">
+                    <p>No contacts found.</p>
+                  </div>
+                ) : (
+                  filteredImportContacts.map((c) => (
+                    <label key={c.id} className="import-contact-row">
+                      <input
+                        type="checkbox"
+                        checked={!!c.selected}
+                        onChange={() => handleToggleImportContact(c.id)}
+                      />
+                      <div className="import-contact-info">
+                        <strong>{c.name || 'Unnamed Contact'}</strong>
+                        <span>{c.formattedPhone || `+${c.phone}`}</span>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setImportModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleConfirmImport}
+                disabled={selectedImportCount === 0}
+              >
+                Import {selectedImportCount} Contact{selectedImportCount === 1 ? '' : 's'}
               </button>
             </div>
           </div>
