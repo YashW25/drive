@@ -65,8 +65,11 @@ export class SupabasePgAuthStorageProvider implements IAuthStorageProvider {
             }
 
             if (keysData) {
+              const prefix = `keys/${type}-`;
               for (const row of keysData) {
-                const id = row.id.split('-').slice(1).join('-').replace('.json', '');
+                const id = row.id.startsWith(prefix)
+                  ? row.id.slice(prefix.length).replace(/\.json$/, '')
+                  : row.id.replace(/^keys\/[^-]+-/, '').replace(/\.json$/, '');
                 data[id] = JSON.parse(row.value, BufferJSON.reviver);
               }
             }
