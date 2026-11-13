@@ -370,6 +370,7 @@ export class AiService implements OnModuleInit {
         message: userMessage,
         conversation_id: conversationId,
         use_knowledge: false,
+        use_history: false,
         max_tokens: rule.maxTokens && rule.maxTokens >= 50 ? rule.maxTokens : 180,
       };
 
