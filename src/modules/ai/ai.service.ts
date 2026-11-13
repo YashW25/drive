@@ -241,8 +241,12 @@ export class AiService implements OnModuleInit {
         message: userMessage,
         conversation_id: conversationId,
         use_knowledge: false,
-        max_tokens: rule.maxTokens || 50,
+        max_tokens: rule.maxTokens && rule.maxTokens >= 50 ? rule.maxTokens : 180,
       };
+
+      if (rule.systemPrompt && rule.systemPrompt.trim()) {
+        payload.system_prompt = rule.systemPrompt.trim();
+      }
 
       this.logger.log(`Invoking AI for chat ${chatId} using endpoint ${aiEndpoint}`);
 
@@ -326,7 +330,7 @@ export class AiService implements OnModuleInit {
       aiApiKey: dto.aiApiKey || DEFAULT_AI_KEY,
       systemPrompt: dto.systemPrompt || null,
       cooldownSeconds: dto.cooldownSeconds ?? 10,
-      maxTokens: dto.maxTokens ?? 80,
+      maxTokens: dto.maxTokens ?? 150,
       ownerSupabaseId: ownerSupabaseId || null,
       totalRepliesSent: 0,
     });
@@ -367,6 +371,16 @@ export class AiService implements OnModuleInit {
     const apiKey = dto.apiKey || DEFAULT_AI_KEY;
 
     try {
+      const payload: Record<string, unknown> = {
+        message: dto.message,
+        use_knowledge: false,
+        max_tokens: 180,
+      };
+
+      if (dto.systemPrompt && dto.systemPrompt.trim()) {
+        payload.system_prompt = dto.systemPrompt.trim();
+      }
+
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -374,11 +388,7 @@ export class AiService implements OnModuleInit {
           'X-API-Key': apiKey,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenWA/1.0',
         },
-        body: JSON.stringify({
-          message: dto.message,
-          use_knowledge: false,
-          max_tokens: 50,
-        }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(60000),
       });
 

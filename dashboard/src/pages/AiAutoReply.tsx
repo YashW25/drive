@@ -63,7 +63,7 @@ export function AiAutoReply() {
   const [formApiKey, setFormApiKey] = useState(DEFAULT_AI_KEY);
   const [formSystemPrompt, setFormSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [formCooldown, setFormCooldown] = useState(10);
-  const [formMaxTokens, setFormMaxTokens] = useState(80);
+  const [formMaxTokens, setFormMaxTokens] = useState(150);
   const [formEnabled, setFormEnabled] = useState(true);
 
   // Playground state
@@ -88,7 +88,7 @@ export function AiAutoReply() {
     setFormApiKey(DEFAULT_AI_KEY);
     setFormSystemPrompt(DEFAULT_SYSTEM_PROMPT);
     setFormCooldown(10);
-    setFormMaxTokens(80);
+    setFormMaxTokens(150);
     setFormEnabled(true);
     setShowModal(true);
   };
@@ -718,7 +718,7 @@ export function AiAutoReply() {
                       onChange={(e) => setFormMaxTokens(Number(e.target.value))}
                     />
                     <span className="form-hint">
-                      Length limit for the generated WhatsApp reply (~80 tokens = 2 sentences).
+                      Length limit for the generated WhatsApp reply (~150 tokens = 2-3 sentences).
                     </span>
                   </div>
                 </div>
