@@ -240,8 +240,8 @@ export class AiService implements OnModuleInit {
       const payload: Record<string, unknown> = {
         message: userMessage,
         conversation_id: conversationId,
-        use_knowledge: true,
-        max_tokens: rule.maxTokens || 80,
+        use_knowledge: false,
+        max_tokens: rule.maxTokens || 50,
       };
 
       this.logger.log(`Invoking AI for chat ${chatId} using endpoint ${aiEndpoint}`);
@@ -254,7 +254,7 @@ export class AiService implements OnModuleInit {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenWA/1.0',
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(60000),
       });
 
       if (!response.ok) {
@@ -376,10 +376,10 @@ export class AiService implements OnModuleInit {
         },
         body: JSON.stringify({
           message: dto.message,
-          use_knowledge: true,
-          max_tokens: 80,
+          use_knowledge: false,
+          max_tokens: 50,
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(60000),
       });
 
       const durationMs = Date.now() - start;
